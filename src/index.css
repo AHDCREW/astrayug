@@ -1,0 +1,28 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Mona Sans', ui-sans-serif, system-ui, sans-serif;
+
+  --color-paper: #f4f3ef;
+  --color-ink: #0e0e10;
+  --color-muted: #6b6b70;
+  --color-line: #e2e0da;
+  --color-saffron: #ff5b1f;
+}
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--color-saffron);
+  color: #fff;
+}
