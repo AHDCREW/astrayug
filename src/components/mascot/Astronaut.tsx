@@ -86,6 +86,9 @@ const ARM_WAVE = 2.3;
 const WORLD_H = 2 * 7 * Math.tan((12 * Math.PI) / 180);
 
 const SPIN_S = 1.1;
+// Let go after a drag, it takes this long to get home, plus this long for each turn.
+const HOME_S = 0.5;
+const HOME_TURN_S = 0.45;
 const PUFFS = 14;
 const SIDES = [-1, 1] as const;
 
@@ -291,10 +294,15 @@ export default function Astronaut({ brain, onBoop, onHover, onDragStart, lite }:
     shock: 0,
     dragX: 0,
     dragY: 0,
-    goalX: 0,
-    goalY: 0,
-    restX: 0,
-    restY: 0,
+    held: false,
+    baseX: 0,
+    baseY: 0,
+    fromX: 0,
+    fromY: 0,
+    homeAt: -Infinity,
+    homeS: 1,
+    turns: 0,
+    dir: 1,
     grin: 0,
     wave: [0, 0],
     seenBoop: -Infinity,
@@ -527,13 +535,11 @@ export default function Astronaut({ brain, onBoop, onHover, onDragStart, lite }:
     }
     const p = (now - c.spinAt) / (SPIN_S * 1000);
     const spinning = p >= 0 && p < 1;
-    const spin = spinning ? easeInOut(p) * Math.PI * 2 : 0;
-    const fling = spinning ? Math.sin(p * Math.PI) : 0;
 
     // Zero-g drift: two out-of-step sines per axis, so the path never quite repeats.
     // It leans a little toward the cursor when it comes close.
-    // Dragging pulls it away from its spot, and it stays where it's let go. Where it was
-    // left is kept as an offset from home, so it still scrolls with the page.
+    // Dragging pulls it away from its spot. Let go, it cartwheels home with a push from
+    // the jetpack, rolling the way it travels.
     // The canvas covers the whole screen. Zooming the camera keeps the astronaut the size
     // it was on its stage, and the stage's screen position becomes its home in world space.
     const cam = camera as THREE.PerspectiveCamera;
@@ -548,19 +554,43 @@ export default function Astronaut({ brain, onBoop, onHover, onDragStart, lite }:
     const homeX = (b.stage.cx - size.width / 2) * toWorld;
     const homeY = -(b.stage.cy - size.height / 2) * toWorld;
     const held = b.dragging && b.dragMoved;
+    if (held && !c.held) {
+      // Picked up, maybe on its way home: it carries on from where it is.
+      c.homeAt = -Infinity;
+      c.baseX = c.dragX - b.drag.x * toWorld;
+      c.baseY = c.dragY + b.drag.y * toWorld;
+    } else if (!held && c.held && !b.reduced) {
+      // A turn for every third of the screen height it has to cover, up to three.
+      c.turns = THREE.MathUtils.clamp(Math.round((Math.hypot(c.dragX, c.dragY) / worldH) * 3), 1, 3);
+      c.homeS = HOME_S + HOME_TURN_S * c.turns;
+      c.homeAt = now;
+      c.fromX = c.dragX;
+      c.fromY = c.dragY;
+      c.dir = c.dragX > 0 ? 1 : -1;
+      for (let i = 0; i < 4; i++) emit(SIDES[i % 2], 0.8 + Math.random() * 0.3);
+    }
+    c.held = held;
+    const h = (now - c.homeAt) / (c.homeS * 1000);
+    const homing = h >= 0 && h < 1;
     // Kept on screen while dragged, so it can go anywhere on the page but not off it.
     const limX = Math.max(0, worldW / 2 - 0.9);
     const limY = Math.max(0, worldH / 2 - 1);
     if (held) {
-      c.goalX = THREE.MathUtils.clamp(homeX + c.restX + b.drag.x * toWorld, -limX, limX) - homeX;
-      c.goalY = THREE.MathUtils.clamp(homeY + c.restY - b.drag.y * toWorld, -limY, limY) - homeY;
+      const goalX = THREE.MathUtils.clamp(homeX + c.baseX + b.drag.x * toWorld, -limX, limX) - homeX;
+      const goalY = THREE.MathUtils.clamp(homeY + c.baseY - b.drag.y * toWorld, -limY, limY) - homeY;
+      c.dragX = THREE.MathUtils.damp(c.dragX, goalX, 18, dt);
+      c.dragY = THREE.MathUtils.damp(c.dragY, goalY, 18, dt);
     } else {
-      c.restX = c.goalX;
-      c.restY = c.goalY;
+      // Reduced motion skips the trip and puts it straight back.
+      const k = homing ? 1 - easeInOut(h) : 0;
+      c.dragX = c.fromX * k;
+      c.dragY = c.fromY * k;
     }
-    c.dragX = THREE.MathUtils.damp(c.dragX, c.goalX, held ? 18 : 3, dt);
-    c.dragY = THREE.MathUtils.damp(c.dragY, c.goalY, held ? 18 : 3, dt);
     c.shock = THREE.MathUtils.damp(c.shock, held ? 1 : 0, 14, dt);
+
+    // The boop's cartwheel and the trip home's both turn the rig and fling the limbs out.
+    const spin = (spinning ? easeInOut(p) * Math.PI * 2 : 0) - (homing ? easeInOut(h) * c.turns * Math.PI * 2 * c.dir : 0);
+    const fling = Math.max(spinning ? Math.sin(p * Math.PI) : 0, homing ? Math.sin(h * Math.PI) : 0);
     rig.current.position.set(
       float * (Math.sin(t * 0.21) * 0.5 + Math.sin(t * 0.53 + 1) * 0.12) + c.x * c.lean * 0.2 + homeX + c.dragX,
       BASE_Y + homeY + float * (Math.sin(t * 0.29) * 0.12 + Math.sin(t * 0.71 + 2) * 0.04) - c.y * c.lean * 0.12 + fling * 0.25 + c.dragY,
