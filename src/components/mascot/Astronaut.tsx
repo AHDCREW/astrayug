@@ -14,9 +14,12 @@ const METAL = '#3B3B42';
 const PUFF = '#FFC9B0';
 const TETHER = '#C9C3B6';
 const INTERIOR = '#2A2740';
-const GLASS = '#000000';
 const LAMP = '#FFD36B';
 const READOUT = '#FFA27A';
+const TINT = '#141A3C';
+const GOLD = '#E8A93A';
+const GOLD_LIGHT = '#FFD37A';
+const GOLD_DEEP = '#B8741A';
 
 // The helmet is a shell with a round opening at the front, framed by a bezel and
 // closed by a glass dome that bulges a little past it. VISOR is the opening's
@@ -29,9 +32,31 @@ const DOME_D = 1 + BULGE - RIM.z;
 const DOME_R = (RIM.r ** 2 + DOME_D ** 2) / (2 * DOME_D);
 const DOME_Z = 1 + BULGE - DOME_R;
 const DOME_ARC = Math.asin(RIM.r / DOME_R);
-// The glint arc sits just proud of the dome.
-const GLINT_R = 0.54;
-const GLINT_Z = (DOME_Z + Math.sqrt(DOME_R ** 2 - GLINT_R ** 2)) * HELMET[2] + 0.01;
+
+// The gold sun visor, down over the face: a cap of a shell just outside the helmet.
+// It's a little wider than the opening, so it covers it whichever way the head turns,
+// and stops short of the head lamps. It hangs on an arm to a pivot on each side, on
+// the same axis as the side caps.
+const SUN = { r: 1.1, cap: 0.86 };
+// The pull tab hangs just below the visor's lower edge.
+const SUN_TAB = SUN.cap + 0.03;
+
+// Highlight streaks just proud of the sun visor: a long one with a thin one inside it
+// at the top left, and a short one at the bottom right. Angles run anticlockwise from
+// the viewer's right.
+const GLINTS = [
+  { r: 0.6, from: 1.95, arc: 0.75, tube: 0.02 },
+  { r: 0.51, from: 2.1, arc: 0.4, tube: 0.011 },
+  { r: 0.62, from: -0.95, arc: 0.32, tube: 0.014 },
+];
+
+// Bolts round the bezel, set on the side of the ring that faces out and forward.
+const STUDS = Array.from({ length: 8 }, (_, k) => {
+  const a = ((k + 0.5) / 8) * Math.PI * 2;
+  const rim = new THREE.Vector3(RIM.r * Math.cos(a), RIM.r * Math.sin(a), RIM.z);
+  const out = new THREE.Vector3(rim.x, rim.y, rim.z + 1).normalize();
+  return rim.addScaledVector(out, 0.062);
+});
 
 // Face ellipsoid inside the helmet: centre and radii. Features sit on its surface.
 const FC = { y: -0.06, z: 0.5 };
@@ -121,6 +146,109 @@ function blushTexture() {
   return tex;
 }
 
+// What the visor reflects, painted as a panorama: deep space with stars and the sun,
+// a station window up high, and Earth's limb curving below the horizon. Across is all
+// the way round; down runs from straight up to straight down. The window and the top
+// of the limb repeat half a turn apart, so the reflection reads the same either way
+// the panorama is mapped.
+function visorReflection() {
+  const w = 1024;
+  const h = 512;
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d')!;
+  // Canvas row for an elevation in degrees, 90 being straight up.
+  const row = (deg: number) => h * (0.5 - deg / 180);
+
+  const sky = ctx.createLinearGradient(0, 0, 0, row(-30));
+  sky.addColorStop(0, '#04050c');
+  sky.addColorStop(0.7, '#141b45');
+  sky.addColorStop(1, '#2a3a7a');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, w, h);
+
+  ctx.fillStyle = '#ffffff';
+  for (let i = 0; i < 90; i++) {
+    ctx.globalAlpha = 0.25 + Math.random() * 0.5;
+    ctx.beginPath();
+    ctx.arc(Math.random() * w, Math.random() * row(-15), 0.8 + Math.random() * 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  const sunX = w * 0.62;
+  const sunY = row(28);
+  const sun = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 64);
+  sun.addColorStop(0, '#ffffff');
+  sun.addColorStop(0.15, '#fff6dc');
+  sun.addColorStop(0.4, 'rgba(255,214,150,0.35)');
+  sun.addColorStop(1, 'rgba(255,214,150,0)');
+  ctx.fillStyle = sun;
+  ctx.fillRect(sunX - 64, sunY - 64, 128, 128);
+
+  // A window with a cross frame, high enough that it lands on the visor above the eyes.
+  for (const u of [0.25, 0.75]) {
+    const left = u * w - 64;
+    const top = row(68);
+    const bottom = row(35);
+    ctx.fillStyle = '#e8f0ff';
+    ctx.shadowColor = '#9fb8ff';
+    ctx.shadowBlur = 24;
+    ctx.beginPath();
+    ctx.roundRect(left, top, 128, bottom - top, 14);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#0a0d1f';
+    ctx.fillRect(u * w - 4, top, 8, bottom - top);
+    ctx.fillRect(left, (top + bottom) / 2 - 4, 128, 8);
+  }
+
+  // Earth, low enough that it reflects off the visor's lower edge, under the mouth.
+  // Its blues are deep, since the gold turns bright blue a sickly green.
+  const limb = (x: number) => row(-36 - (10 * (1 - Math.cos(4 * Math.PI * (x / w - 0.25)))) / 2);
+  const earth = new Path2D();
+  earth.moveTo(0, h);
+  for (let x = 0; x <= w; x += 8) earth.lineTo(x, limb(x));
+  earth.lineTo(w, h);
+  earth.closePath();
+  const sea = ctx.createLinearGradient(0, row(-36), 0, h);
+  sea.addColorStop(0, '#2a6cc0');
+  sea.addColorStop(0.25, '#123a80');
+  sea.addColorStop(1, '#040c22');
+  ctx.fillStyle = sea;
+  ctx.fill(earth);
+  ctx.save();
+  ctx.clip(earth);
+  const blobs = (count: number, color: string, rx: number, ry: number) => {
+    ctx.fillStyle = color;
+    for (let i = 0; i < count; i++) {
+      const x = Math.random() * w;
+      const y = limb(x) + 6 + Math.random() * (h - limb(x)) * 0.5;
+      ctx.beginPath();
+      ctx.ellipse(x, y, rx * (0.4 + Math.random()), ry * (0.4 + Math.random()), 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  };
+  blobs(14, 'rgba(150,130,80,0.5)', 40, 12);
+  blobs(40, 'rgba(255,255,255,0.55)', 36, 6);
+  ctx.restore();
+
+  // The thin bright band of atmosphere along the limb.
+  ctx.beginPath();
+  for (let x = 0; x <= w; x += 8) ctx.lineTo(x, limb(x));
+  ctx.strokeStyle = '#bfeaff';
+  ctx.lineWidth = 4;
+  ctx.shadowColor = '#6cc6ff';
+  ctx.shadowBlur = 18;
+  ctx.stroke();
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.mapping = THREE.EquirectangularReflectionMapping;
+  return tex;
+}
+
 interface Puff {
   age: number;
   life: number;
@@ -163,6 +291,10 @@ export default function Astronaut({ brain, onBoop, onHover, onDragStart, lite }:
     shock: 0,
     dragX: 0,
     dragY: 0,
+    goalX: 0,
+    goalY: 0,
+    restX: 0,
+    restY: 0,
     grin: 0,
     wave: [0, 0],
     seenBoop: -Infinity,
@@ -244,25 +376,81 @@ export default function Astronaut({ brain, onBoop, onHover, onDragStart, lite }:
         roughness: 0.9,
         side: THREE.BackSide,
       }),
-      // The visor only adds its reflections on top of the face. Real transmission
-      // would drop the blush, since its pass only sees opaque objects.
-      glass: lite
-        ? new THREE.MeshStandardMaterial({
-            color: GLASS,
-            roughness: 0.15,
-            transparent: true,
-            depthWrite: false,
-            blending: THREE.AdditiveBlending,
-          })
-        : new THREE.MeshPhysicalMaterial({
-            color: GLASS,
-            roughness: 0.06,
-            ior: 1.5,
-            envMapIntensity: 0.55,
-            transparent: true,
-            depthWrite: false,
-            blending: THREE.AdditiveBlending,
-          }),
+      // A faint smoky tint on the glass visor, deepening where it's seen edge-on.
+      tint: new THREE.ShaderMaterial({
+        uniforms: { color: { value: new THREE.Color(TINT) } },
+        vertexShader: /* glsl */ `
+          varying vec3 vNormal;
+          varying vec3 vView;
+          void main() {
+            vec4 mv = modelViewMatrix * vec4(position, 1.0);
+            vNormal = normalMatrix * normal;
+            vView = -mv.xyz;
+            gl_Position = projectionMatrix * mv;
+          }
+        `,
+        fragmentShader: /* glsl */ `
+          uniform vec3 color;
+          varying vec3 vNormal;
+          varying vec3 vView;
+          void main() {
+            float edge = 1.0 - abs(dot(normalize(vNormal), normalize(vView)));
+            gl_FragColor = vec4(color, mix(0.05, 0.6, pow(edge, 1.5)));
+            #include <colorspace_fragment>
+          }
+        `,
+        transparent: true,
+        depthWrite: false,
+      }),
+      // The gold sun visor is two layers over the glass, and the face still shows
+      // through both, so its expressions read through the visor. First a gold film:
+      // thin in the middle, close to solid where the visor turns edge-on, and lighter
+      // where it faces up.
+      goldFilm: new THREE.ShaderMaterial({
+        uniforms: {
+          light: { value: new THREE.Color(GOLD_LIGHT) },
+          deep: { value: new THREE.Color(GOLD_DEEP) },
+        },
+        vertexShader: /* glsl */ `
+          varying vec3 vNormal;
+          varying vec3 vView;
+          void main() {
+            vec4 mv = modelViewMatrix * vec4(position, 1.0);
+            vNormal = normalMatrix * normal;
+            vView = -mv.xyz;
+            gl_Position = projectionMatrix * mv;
+          }
+        `,
+        fragmentShader: /* glsl */ `
+          uniform vec3 light;
+          uniform vec3 deep;
+          varying vec3 vNormal;
+          varying vec3 vView;
+          void main() {
+            vec3 n = normalize(vNormal);
+            float edge = 1.0 - abs(dot(n, normalize(vView)));
+            vec3 color = mix(deep, light, smoothstep(-0.6, 0.8, n.y));
+            gl_FragColor = vec4(mix(color, deep, edge * 0.5), mix(0.35, 0.9, pow(edge, 1.3)));
+            #include <colorspace_fragment>
+          }
+        `,
+        transparent: true,
+        depthWrite: false,
+      }),
+      // Then the gold's mirror reflections, added on top, tinted gold and turning white
+      // toward the rim. Real transmission would drop the blush, since its pass only sees
+      // opaque objects. They reflect a painted view of space, not the studio light the
+      // suit sees, so the lite path, which has no studio light, gets them too.
+      goldShine: new (lite ? THREE.MeshStandardMaterial : THREE.MeshPhysicalMaterial)({
+        color: GOLD,
+        metalness: 1,
+        roughness: 0.08,
+        envMap: visorReflection(),
+        envMapIntensity: 1,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      }),
       lamp: new THREE.MeshBasicMaterial({ color: LAMP }),
       readout: new THREE.MeshBasicMaterial({ color: READOUT }),
     };
@@ -271,6 +459,7 @@ export default function Astronaut({ brain, onBoop, onHover, onDragStart, lite }:
   useEffect(
     () => () => {
       mats.blush.map?.dispose();
+      mats.goldShine.envMap?.dispose();
       Object.values(mats).forEach(m => m.dispose());
       puffGeometry.dispose();
       hose.dispose();
@@ -343,7 +532,8 @@ export default function Astronaut({ brain, onBoop, onHover, onDragStart, lite }:
 
     // Zero-g drift: two out-of-step sines per axis, so the path never quite repeats.
     // It leans a little toward the cursor when it comes close.
-    // Dragging pulls it away from its spot; on release it springs back on the tether.
+    // Dragging pulls it away from its spot, and it stays where it's let go. Where it was
+    // left is kept as an offset from home, so it still scrolls with the page.
     // The canvas covers the whole screen. Zooming the camera keeps the astronaut the size
     // it was on its stage, and the stage's screen position becomes its home in world space.
     const cam = camera as THREE.PerspectiveCamera;
@@ -357,15 +547,20 @@ export default function Astronaut({ brain, onBoop, onHover, onDragStart, lite }:
     const toWorld = worldH / size.height;
     const homeX = (b.stage.cx - size.width / 2) * toWorld;
     const homeY = -(b.stage.cy - size.height / 2) * toWorld;
-    const pull = b.dragging || b.dragMoved;
-    // Kept on screen, so it can go anywhere on the page but not off it.
+    const held = b.dragging && b.dragMoved;
+    // Kept on screen while dragged, so it can go anywhere on the page but not off it.
     const limX = Math.max(0, worldW / 2 - 0.9);
     const limY = Math.max(0, worldH / 2 - 1);
-    const goalX = THREE.MathUtils.clamp(homeX + b.drag.x * toWorld, -limX, limX) - homeX;
-    const goalY = THREE.MathUtils.clamp(homeY - b.drag.y * toWorld, -limY, limY) - homeY;
-    c.dragX = THREE.MathUtils.damp(c.dragX, pull ? goalX : 0, pull ? 18 : 3, dt);
-    c.dragY = THREE.MathUtils.damp(c.dragY, pull ? goalY : 0, pull ? 18 : 3, dt);
-    c.shock = THREE.MathUtils.damp(c.shock, b.dragging && b.dragMoved ? 1 : 0, 14, dt);
+    if (held) {
+      c.goalX = THREE.MathUtils.clamp(homeX + c.restX + b.drag.x * toWorld, -limX, limX) - homeX;
+      c.goalY = THREE.MathUtils.clamp(homeY + c.restY - b.drag.y * toWorld, -limY, limY) - homeY;
+    } else {
+      c.restX = c.goalX;
+      c.restY = c.goalY;
+    }
+    c.dragX = THREE.MathUtils.damp(c.dragX, c.goalX, held ? 18 : 3, dt);
+    c.dragY = THREE.MathUtils.damp(c.dragY, c.goalY, held ? 18 : 3, dt);
+    c.shock = THREE.MathUtils.damp(c.shock, held ? 1 : 0, 14, dt);
     rig.current.position.set(
       float * (Math.sin(t * 0.21) * 0.5 + Math.sin(t * 0.53 + 1) * 0.12) + c.x * c.lean * 0.2 + homeX + c.dragX,
       BASE_Y + homeY + float * (Math.sin(t * 0.29) * 0.12 + Math.sin(t * 0.71 + 2) * 0.04) - c.y * c.lean * 0.12 + fling * 0.25 + c.dragY,
@@ -637,6 +832,11 @@ export default function Astronaut({ brain, onBoop, onHover, onDragStart, lite }:
               <mesh position={[0, 0, RIM.z]} material={mats.ring}>
                 <torusGeometry args={[RIM.r, 0.065, 20, seg(72)]} />
               </mesh>
+              {STUDS.map((position, k) => (
+                <mesh key={k} position={position} material={mats.metal}>
+                  <sphereGeometry args={[0.022, 12, 10]} />
+                </mesh>
+              ))}
             </group>
             <mesh position={[0, FC.y, FC.z]} scale={[FR.x, FR.y, FR.z]} material={mats.face}>
               <sphereGeometry args={[1, seg(64), seg(64)]} />
@@ -719,15 +919,56 @@ export default function Astronaut({ brain, onBoop, onHover, onDragStart, lite }:
               <circleGeometry args={[0.085, 32]} />
             </mesh>
 
-            {/* glass visor and its glint */}
+            {/* tinted glass visor, then the gold sun visor's film and reflections over it,
+                then the highlight streaks. The render order keeps the layers in that
+                order and after the blush. */}
             <group scale={HELMET}>
-              <mesh position={[0, 0, DOME_Z]} rotation={[Math.PI / 2, 0, 0]} material={mats.glass}>
+              <mesh position={[0, 0, DOME_Z]} rotation={[Math.PI / 2, 0, 0]} material={mats.tint} renderOrder={1}>
                 <sphereGeometry args={[DOME_R, seg(64), seg(32), 0, Math.PI * 2, 0, DOME_ARC]} />
               </mesh>
+              {[mats.goldFilm, mats.goldShine].map((m, i) => (
+                <mesh key={i} rotation={[Math.PI / 2, 0, 0]} material={m} renderOrder={i + 2}>
+                  <sphereGeometry args={[SUN.r, seg(64), seg(32), 0, Math.PI * 2, 0, SUN.cap]} />
+                </mesh>
+              ))}
+              {GLINTS.map(({ r, from, arc, tube }) => (
+                <mesh
+                  key={from}
+                  position={[0, 0, Math.sqrt(SUN.r ** 2 - r ** 2) + 0.012]}
+                  rotation={[0, 0, from]}
+                  material={mats.glint}
+                  renderOrder={4}
+                >
+                  <torusGeometry args={[r, tube, 8, 48, arc]} />
+                </mesh>
+              ))}
+
+              {/* the sun visor's rim, a pull tab, and an arm back to a pivot on each side.
+                  The arms are strips of the shell that narrow to the pivot. */}
+              <mesh position={[0, 0, SUN.r * Math.cos(SUN.cap)]} material={mats.ring}>
+                <torusGeometry args={[SUN.r * Math.sin(SUN.cap), 0.02, 12, seg(72)]} />
+              </mesh>
+              <RoundedBox
+                args={[0.16, 0.06, 0.03]}
+                radius={0.012}
+                position={[0, -Math.sin(SUN_TAB) * (SUN.r + 0.008), Math.cos(SUN_TAB) * (SUN.r + 0.008)]}
+                rotation={[SUN_TAB, 0, 0]}
+                material={mats.trim}
+              />
+              {SIDES.map(side => (
+                <group key={side} scale={[side, 1, 1]}>
+                  <mesh rotation={[0, 0, -Math.PI / 2]} material={mats.ring}>
+                    <sphereGeometry args={[SUN.r - 0.004, 6, 12, Math.PI / 2 - 0.07, 0.14, 0.08, Math.PI / 2 - SUN.cap - 0.03]} />
+                  </mesh>
+                  <mesh position={[SUN.r, 0, 0]} rotation={[0, 0, Math.PI / 2]} material={mats.trim}>
+                    <cylinderGeometry args={[0.11, 0.11, 0.05, 24]} />
+                  </mesh>
+                  <mesh position={[SUN.r + 0.01, 0, 0]} rotation={[0, 0, Math.PI / 2]} material={mats.metal}>
+                    <cylinderGeometry args={[0.045, 0.045, 0.06, 16]} />
+                  </mesh>
+                </group>
+              ))}
             </group>
-            <mesh position={[0, FC.y, GLINT_Z]} rotation={[0, 0, 1.95]} material={mats.glint}>
-              <torusGeometry args={[GLINT_R, 0.02, 8, 48, 0.75]} />
-            </mesh>
           </group>
         </group>
       </group>
