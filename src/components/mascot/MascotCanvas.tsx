@@ -15,7 +15,7 @@ import { useMascotBrain } from './useMascotBrain';
 // when there's headroom. If frames still drop at 1x, it switches for good to the lite
 // path, which uses cheaper materials and no reflections.
 export default function MascotCanvas() {
-  const { brain, boop, hover } = useMascotBrain();
+  const { brain, boop, hover, startDrag } = useMascotBrain();
   const wrap = useRef<HTMLDivElement>(null);
   const [dpr, setDpr] = useState(lowEnd ? 1 : maxDpr);
   const [lite, setLite] = useState(lowEnd);
@@ -25,6 +25,30 @@ export default function MascotCanvas() {
 
   // Pixel ratio for the monitor's quality factor (0..1), in quarter steps.
   const fit = ({ factor }: { factor: number }) => setDpr(Math.round((1 + (maxDpr - 1) * factor) * 4) / 4);
+
+  // Report where the stage sits on screen, so the astronaut rests there and can leave it.
+  useEffect(() => {
+    const el = wrap.current;
+    if (!el) return;
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      Object.assign(brain.current.stage, {
+        cx: r.left + r.width / 2,
+        cy: r.top + r.height / 2,
+        h: r.height,
+      });
+    };
+    measure();
+    window.addEventListener('scroll', measure, { passive: true });
+    window.addEventListener('resize', measure);
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => {
+      window.removeEventListener('scroll', measure);
+      window.removeEventListener('resize', measure);
+      ro.disconnect();
+    };
+  }, [brain]);
 
   // Don't render frames nobody can see.
   useEffect(() => {
@@ -37,57 +61,71 @@ export default function MascotCanvas() {
 
   return (
     <div ref={wrap} data-quality={lite ? 'lite' : 'full'} className="relative mx-auto h-full w-full max-w-[760px]">
-      <Canvas
-        aria-hidden="true"
-        frameloop={onScreen ? 'always' : 'never'}
-        eventSource={document.getElementById('root') ?? undefined}
-        // Events arrive from #root, so measure the pointer against the canvas's real position.
-        onCreated={({ gl, setEvents }) =>
-          setEvents({
-            compute: (event, state) => {
-              const r = gl.domElement.getBoundingClientRect();
-              state.pointer.set(((event.clientX - r.left) / r.width) * 2 - 1, -((event.clientY - r.top) / r.height) * 2 + 1);
-              state.raycaster.setFromCamera(state.pointer, state.camera);
-            },
-          })
-        }
-        dpr={dpr}
-        camera={{ position: [0, 0, 7], fov: 24 }}
-        gl={{ antialias: !lowEnd, alpha: true, toneMapping: THREE.NeutralToneMapping }}
-      >
-        {/* Samples the frame rate in ~1.5 s windows and moves the pixel ratio a quarter
+      {/* The canvas is a fixed full-screen overlay above the page; the wrapper above only
+          marks where the astronaut rests. */}
+      <div className="pointer-events-none fixed inset-0 z-50">
+        <Canvas
+          aria-hidden="true"
+          frameloop={onScreen ? 'always' : 'never'}
+          eventSource={document.getElementById('root') ?? undefined}
+          // Events arrive from #root, so measure the pointer against the canvas's real position.
+          onCreated={({ gl, setEvents }) =>
+            setEvents({
+              compute: (event, state) => {
+                const r = gl.domElement.getBoundingClientRect();
+                state.pointer.set(((event.clientX - r.left) / r.width) * 2 - 1, -((event.clientY - r.top) / r.height) * 2 + 1);
+                state.raycaster.setFromCamera(state.pointer, state.camera);
+              },
+            })
+          }
+          dpr={dpr}
+          camera={{ position: [0, 0, 7], fov: 24 }}
+          gl={{
+            antialias: !lowEnd,
+            alpha: true,
+            toneMapping: THREE.NeutralToneMapping,
+          }}
+        >
+          {/* Samples the frame rate in ~1.5 s windows and moves the pixel ratio a quarter
             of the way per step. Two drei quirks shape this:
             - Its flip-flop fallback isn't used. It counts every step, even a steady 60 fps
               device nudging up against the ceiling, so it would push healthy devices onto
               the lite path.
             - The ratio is set on every step, not in onChange. onChange misses the last step
               down to 0 once the monitor has re-rendered, which leaves the ratio above 1x. */}
-        <PerformanceMonitor
-          factor={lowEnd ? 0 : 1}
-          iterations={6}
-          step={0.25}
-          onIncline={fit}
-          onDecline={api => {
-            fit(api);
-            if (api.factor === 0 && atFloor.current) setLite(true);
-            atFloor.current = api.factor === 0;
-          }}
-        />
-        {/* Without reflections the lite path needs more fill light to stay bright. */}
-        <hemisphereLight args={['#ffffff', '#e8e1d4', lite ? 2 : 1.1]} />
-        <directionalLight position={[3, 4, 5]} intensity={1.5} />
-        <directionalLight position={[-4, 2, -3]} intensity={0.7} />
-        {/* Soft studio reflections, built locally so nothing is fetched from a CDN. */}
-        {!lite && (
-          <Environment resolution={256} frames={1}>
-            <Lightformer form="rect" intensity={2} position={[0, 5, -4]} scale={[10, 4, 1]} />
-            <Lightformer form="rect" intensity={1.4} position={[-5, 1, 2]} rotation-y={Math.PI / 2} scale={[8, 3, 1]} />
-            <Lightformer form="rect" intensity={1} position={[5, 0, 3]} rotation-y={-Math.PI / 2} scale={[8, 3, 1]} />
-            <Lightformer form="circle" intensity={3} position={[-3, 4, 5]} scale={1.5} />
-          </Environment>
-        )}
-        <Astronaut brain={brain} onBoop={boop} onHover={hover} lite={lite} />
-      </Canvas>
+          <PerformanceMonitor
+            factor={lowEnd ? 0 : 1}
+            iterations={6}
+            step={0.25}
+            onIncline={fit}
+            onDecline={api => {
+              fit(api);
+              if (api.factor === 0 && atFloor.current) setLite(true);
+              atFloor.current = api.factor === 0;
+            }}
+          />
+          {/* Without reflections the lite path needs more fill light to stay bright. */}
+          <hemisphereLight args={['#ffffff', '#e8e1d4', lite ? 2 : 1.1]} />
+          <directionalLight position={[3, 4, 5]} intensity={1.5} />
+          <directionalLight position={[-4, 2, -3]} intensity={0.7} />
+          {/* Soft studio reflections, built locally so nothing is fetched from a CDN. */}
+          {!lite && (
+            <Environment resolution={256} frames={1}>
+              <Lightformer form="rect" intensity={2} position={[0, 5, -4]} scale={[10, 4, 1]} />
+              <Lightformer form="rect" intensity={1.4} position={[-5, 1, 2]} rotation-y={Math.PI / 2} scale={[8, 3, 1]} />
+              <Lightformer form="rect" intensity={1} position={[5, 0, 3]} rotation-y={-Math.PI / 2} scale={[8, 3, 1]} />
+              <Lightformer form="circle" intensity={3} position={[-3, 4, 5]} scale={1.5} />
+            </Environment>
+          )}
+          <Astronaut
+            brain={brain}
+            onBoop={boop}
+            onHover={hover}
+            onDragStart={startDrag}
+            lite={lite}
+          />
+        </Canvas>
+      </div>
       <button
         type="button"
         onClick={boop}
