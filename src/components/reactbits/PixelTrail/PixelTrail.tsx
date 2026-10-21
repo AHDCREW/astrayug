@@ -4,6 +4,10 @@ import { useEffect, useRef, type CSSProperties } from 'react';
 
 const TRAIL_SIZE = 512;
 const AGE_SIZE = 256;
+// Every live point is redrawn each frame. This only bounds the cost of frantic
+// scribbling: at the default spacing it's over three screen widths of travel
+// within one trail lifetime, so a real flick never reaches it.
+const MAX_POINTS = 1000;
 export interface PixelTrailProps {
   gridSize?: number;
   trailSize?: number;
@@ -56,6 +60,7 @@ interface TrailPoint {
   force: number;
   vx: number;
   vy: number;
+  stops?: string[];
 }
 
 interface Engine {
@@ -67,6 +72,15 @@ const SHAPES: Record<string, number> = { square: 0, circle: 1, diamond: 2 };
 const DECAYS: Record<string, number> = { fade: 0, shrink: 1, dither: 2 };
 
 const identityEase = (x: number) => x;
+
+// Gradient stops for one point that draws like `weight` plain points stacked.
+// Each plain point screens the black by 0.2(1 - t)² at offset t, so together they
+// leave (1 - 0.2(1 - t)²)^weight of it.
+const stackedStops = (weight: number, count = 8) =>
+  Array.from({ length: count }, (_, i) => {
+    const t = i / (count - 1);
+    return `rgba(255, 255, 255, ${(1 - Math.pow(1 - 0.2 * (1 - t) ** 2, weight)).toFixed(4)})`;
+  });
 
 const VERTEX = `#version 300 es
 in vec2 a_position;
@@ -439,6 +453,7 @@ export default function PixelTrail({
       const s = settingsRef.current;
       const { points } = state;
       const last = points[points.length - 1];
+      let stops: string[] | undefined;
       if (last) {
         const dx = last.x - x;
         const dy = last.y - y;
@@ -446,15 +461,22 @@ export default function PixelTrail({
         const force = Math.max(0.3, Math.min(dd * 10000, 1));
         state.force = force;
         if (s.interpolate) {
-          const lines = Math.ceil(dd / Math.pow((s.trailSize * 0.5) / s.interpolate, 2));
+          // The original filled the gap with dd / step² points, so a fast move drew a
+          // denser, brighter trail, but the count grew with the square of the jump and a
+          // quick flick added thousands. Points now sit one step apart, and each is drawn
+          // as bright as the stack of original points it replaces.
+          const step = (s.trailSize * 0.5) / s.interpolate;
+          const lines = Math.ceil(Math.sqrt(dd) / step);
           if (lines > 1) {
+            stops = stackedStops(Math.ceil(dd / (step * step)) / lines);
             for (let i = 1; i < lines; i++) {
-              points.push({ x: last.x - (dx / lines) * i, y: last.y - (dy / lines) * i, age: 0, force, vx, vy });
+              points.push({ x: last.x - (dx / lines) * i, y: last.y - (dy / lines) * i, age: 0, force, vx, vy, stops });
             }
           }
         }
       }
-      points.push({ x, y, age: 0, force: state.force, vx, vy });
+      points.push({ x, y, age: 0, force: state.force, vx, vy, stops });
+      if (points.length > MAX_POINTS) points.splice(0, points.length - MAX_POINTS);
     };
 
     const drawTouch = (point: TrailPoint) => {
@@ -471,8 +493,12 @@ export default function PixelTrail({
       ctx.globalCompositeOperation = 'screen';
       const radius = TRAIL_SIZE * s.trailSize * intensity;
       const gradient = ctx.createRadialGradient(x, y, Math.max(0, radius * 0.25), x, y, Math.max(0, radius));
-      gradient.addColorStop(0, 'rgba(255, 255, 255, 0.2)');
-      gradient.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
+      if (point.stops) {
+        point.stops.forEach((stop, i, all) => gradient.addColorStop(i / (all.length - 1), stop));
+      } else {
+        gradient.addColorStop(0, 'rgba(255, 255, 255, 0.2)');
+        gradient.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
+      }
       ctx.beginPath();
       ctx.fillStyle = gradient;
       ctx.arc(x, y, Math.max(0, radius), 0, Math.PI * 2);
@@ -501,10 +527,14 @@ export default function PixelTrail({
         ageCtx.fillStyle = 'black';
         ageCtx.fillRect(0, 0, AGE_SIZE, AGE_SIZE);
       }
-      state.points.forEach((point, i) => {
+      // Age and drop expired points in one pass. Splicing inside forEach was quadratic
+      // and skipped the point after each removal.
+      let kept = 0;
+      for (const point of state.points) {
         point.age += delta * 1000;
-        if (point.age > s.maxAge) state.points.splice(i, 1);
-      });
+        if (point.age <= s.maxAge) state.points[kept++] = point;
+      }
+      state.points.length = kept;
       if (!state.points.length) state.force = 0;
       if (s.flow > 0 || s.gravity !== 0) {
         const drag = Math.exp(-3 * delta);

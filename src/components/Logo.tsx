@@ -1,10 +1,20 @@
 import DecryptedText from './reactbits/DecryptedText/DecryptedText';
 
-// A saffron planet with an ink orbit, then the wordmark in wide Hubot Sans.
-// The orbit is drawn twice so its front arc passes over the planet.
+// Each word of the wordmark scrambles on its own when hovered.
+const SCRAMBLE = {
+  animateOn: 'hover',
+  sequential: true,
+  useOriginalCharsOnly: true,
+  speed: 40,
+  scrambleColor: '#ff5b1f',
+} as const;
+
+// A saffron planet with an ink orbit, then the wordmark ASTRA | YUGA in wide Hubot
+// Sans, with a saffron bar for the "|". The orbit is drawn twice so its front arc
+// passes over the planet.
 export default function Logo() {
   return (
-    <a href="/" className="group flex items-center gap-2" aria-label="Astrayuga home">
+    <a href="/" className="group flex items-center gap-2" aria-label="Astra Yuga home">
       <svg
         viewBox="0 0 24 24"
         aria-hidden="true"
@@ -16,15 +26,14 @@ export default function Logo() {
           <path d="M1.5 12A10.5 3.5 0 0 0 22.5 12" />
         </g>
       </svg>
-      <span className="font-logo text-[15px] font-extrabold tracking-[0.04em]" style={{ fontStretch: '125%' }}>
-        <DecryptedText
-          text="ASTRAYUGA"
-          animateOn="hover"
-          sequential
-          useOriginalCharsOnly
-          speed={40}
-          scrambleColor="#ff5b1f"
-        />
+      {/* A size smaller on the narrowest phones, so it clears the "Remind me" button. */}
+      <span
+        className="font-logo text-[13px] font-extrabold tracking-[0.04em] whitespace-nowrap min-[360px]:text-[15px]"
+        style={{ fontStretch: '125%' }}
+      >
+        <DecryptedText text="ASTRA" {...SCRAMBLE} />{' '}
+        <span aria-hidden="true" className="inline-block h-[0.73em] w-[2px] bg-saffron" />{' '}
+        <DecryptedText text="YUGA" {...SCRAMBLE} />
       </span>
     </a>
   );

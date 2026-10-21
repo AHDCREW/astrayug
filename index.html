@@ -12,6 +12,15 @@
       href="https://fonts.googleapis.com/css2?family=Mona+Sans:wdth,wght@75..125,200..900&display=swap"
       rel="stylesheet"
     />
+    <script>
+      try {
+        var t = localStorage.getItem('theme');
+        if (t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)) {
+          document.documentElement.classList.add('dark');
+          document.querySelector('meta[name=theme-color]').content = '#0d0d10';
+        }
+      } catch (e) {}
+    </script>
     <title>Astrayuga · Techfest 2026</title>
   </head>
   <body>

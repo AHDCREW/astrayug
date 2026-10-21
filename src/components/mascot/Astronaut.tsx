@@ -36,8 +36,7 @@ const GLINT_Z = (DOME_Z + Math.sqrt(DOME_R ** 2 - GLINT_R ** 2)) * HELMET[2] + 0
 // Face ellipsoid inside the helmet: centre and radii. Features sit on its surface.
 const FC = { y: -0.06, z: 0.5 };
 const FR = { x: 0.68, y: 0.56, z: 0.44 };
-const faceZ = (x: number, y: number) =>
-  FC.z + FR.z * Math.sqrt(Math.max(0, 1 - (x / FR.x) ** 2 - ((y - FC.y) / FR.y) ** 2));
+const faceZ = (x: number, y: number) => FC.z + FR.z * Math.sqrt(Math.max(0, 1 - (x / FR.x) ** 2 - ((y - FC.y) / FR.y) ** 2));
 
 const EYE_X = 0.26;
 const EYE_Y = 0.04;
@@ -57,6 +56,9 @@ const HIP = { x: 0.27, y: -1.95 };
 const NOZZLE = { x: 0.3, y: -1.88, z: -0.58 };
 const ARM_REST = 0.6;
 const ARM_WAVE = 2.3;
+
+// Visible height at the camera's distance for fov 24 at z = 7.
+const WORLD_H = 2 * 7 * Math.tan((12 * Math.PI) / 180);
 
 const SPIN_S = 1.1;
 const PUFFS = 14;
@@ -130,11 +132,12 @@ interface AstronautProps {
   brain: RefObject<Brain>;
   onBoop: () => void;
   onHover: (on: boolean) => void;
+  onDragStart: (x: number, y: number) => void;
   // Cheaper materials and rounder-by-fewer-polygons spheres, for slower devices.
   lite: boolean;
 }
 
-export default function Astronaut({ brain, onBoop, onHover, lite }: AstronautProps) {
+export default function Astronaut({ brain, onBoop, onHover, onDragStart, lite }: AstronautProps) {
   // Segment count for curved geometry: full detail, or about half on the lite path.
   const seg = (n: number) => (lite ? Math.max(12, Math.round(n / 2)) : n);
   const rig = useRef<THREE.Group>(null!);
@@ -145,6 +148,7 @@ export default function Astronaut({ brain, onBoop, onHover, lite }: AstronautPro
   const eyeR = useRef<THREE.Group>(null!);
   const smile = useRef<THREE.Mesh>(null!);
   const grin = useRef<THREE.Mesh>(null!);
+  const gasp = useRef<THREE.Mesh>(null!);
   const antenna = useRef<THREE.Group>(null!);
   const arms = useRef<THREE.Group[]>([]);
   const legs = useRef<THREE.Group[]>([]);
@@ -152,12 +156,38 @@ export default function Astronaut({ brain, onBoop, onHover, lite }: AstronautPro
   const puffMeshes = useRef<THREE.Mesh[]>([]);
   const clip = useRef<THREE.Group>(null!);
   const tether = useRef<QuadraticBezierLineRef>(null!);
-  const cur = useRef({ x: 0, y: 0, lean: 0, grin: 0, wave: [0, 0], seenBoop: -Infinity, spinAt: -Infinity, nextPuff: 0, nextSlot: 0 });
+  const cur = useRef({
+    x: 0,
+    y: 0,
+    lean: 0,
+    shock: 0,
+    dragX: 0,
+    dragY: 0,
+    grin: 0,
+    wave: [0, 0],
+    seenBoop: -Infinity,
+    spinAt: -Infinity,
+    nextPuff: 0,
+    nextSlot: 0,
+  });
   const tmp = useMemo(
-    () => ({ anchor: new THREE.Vector3(), start: new THREE.Vector3(), end: new THREE.Vector3(), mid: new THREE.Vector3(), q: new THREE.Quaternion() }),
+    () => ({
+      anchor: new THREE.Vector3(),
+      start: new THREE.Vector3(),
+      end: new THREE.Vector3(),
+      mid: new THREE.Vector3(),
+      q: new THREE.Quaternion(),
+    }),
     [],
   );
-  const puffs = useRef<Puff[]>(Array.from({ length: PUFFS }, () => ({ age: 1, life: 1, size: 0, vel: new THREE.Vector3() })));
+  const puffs = useRef<Puff[]>(
+    Array.from({ length: PUFFS }, () => ({
+      age: 1,
+      life: 1,
+      size: 0,
+      vel: new THREE.Vector3(),
+    })),
+  );
   const puffGeometry = useMemo(() => new THREE.SphereGeometry(1, 16, 12), []);
   const hose = useMemo(() => hoseGeometry(lite ? 104 : 208, lite ? 8 : 12), [lite]);
 
@@ -166,26 +196,64 @@ export default function Astronaut({ brain, onBoop, onHover, lite }: AstronautPro
     // expensive part of the shading. The lite path uses plain standard materials.
     const gloss = (color: string, roughness: number, extra: THREE.MeshPhysicalMaterialParameters = {}) =>
       lite
-        ? new THREE.MeshStandardMaterial({ color, roughness, metalness: extra.metalness ?? 0 })
+        ? new THREE.MeshStandardMaterial({
+            color,
+            roughness,
+            metalness: extra.metalness ?? 0,
+          })
         : new THREE.MeshPhysicalMaterial({ color, roughness, ...extra });
     return {
       shell: gloss(SHELL, 0.4, { clearcoat: 1, clearcoatRoughness: 0.25 }),
       trim: gloss(SAFFRON, 0.38, { clearcoat: 0.6, clearcoatRoughness: 0.3 }),
-      face: gloss(FACE, 0.5, { clearcoat: 1, clearcoatRoughness: 0.2, sheen: 0.5, sheenColor: new THREE.Color('#ffd9df') }),
+      face: gloss(FACE, 0.5, {
+        clearcoat: 1,
+        clearcoatRoughness: 0.2,
+        sheen: 0.5,
+        sheenColor: new THREE.Color('#ffd9df'),
+      }),
       eye: gloss(EYE, 0.12, { clearcoat: 1, clearcoatRoughness: 0.04 }),
       shine: new THREE.MeshBasicMaterial({ color: '#ffffff' }),
-      mouth: new THREE.MeshStandardMaterial({ color: MOUTH, roughness: 0.6, side: THREE.DoubleSide }),
+      mouth: new THREE.MeshStandardMaterial({
+        color: MOUTH,
+        roughness: 0.6,
+        side: THREE.DoubleSide,
+      }),
       ring: gloss(RING, 0.5, { clearcoat: 0.5 }),
       metal: gloss(METAL, 0.35, { metalness: 0.6, clearcoat: 0.3 }),
-      blush: new THREE.MeshBasicMaterial({ map: blushTexture(), transparent: true, depthWrite: false, opacity: 0.6 }),
-      glint: new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.8 }),
-      puff: new THREE.MeshStandardMaterial({ color: PUFF, roughness: 1, transparent: true, opacity: 0.85, depthWrite: false }),
+      blush: new THREE.MeshBasicMaterial({
+        map: blushTexture(),
+        transparent: true,
+        depthWrite: false,
+        opacity: 0.6,
+      }),
+      glint: new THREE.MeshBasicMaterial({
+        color: '#ffffff',
+        transparent: true,
+        opacity: 0.8,
+      }),
+      puff: new THREE.MeshStandardMaterial({
+        color: PUFF,
+        roughness: 1,
+        transparent: true,
+        opacity: 0.85,
+        depthWrite: false,
+      }),
       // The padded inside of the helmet, seen around the face.
-      lining: new THREE.MeshStandardMaterial({ color: INTERIOR, roughness: 0.9, side: THREE.BackSide }),
+      lining: new THREE.MeshStandardMaterial({
+        color: INTERIOR,
+        roughness: 0.9,
+        side: THREE.BackSide,
+      }),
       // The visor only adds its reflections on top of the face. Real transmission
       // would drop the blush, since its pass only sees opaque objects.
       glass: lite
-        ? new THREE.MeshStandardMaterial({ color: GLASS, roughness: 0.15, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })
+        ? new THREE.MeshStandardMaterial({
+            color: GLASS,
+            roughness: 0.15,
+            transparent: true,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending,
+          })
         : new THREE.MeshPhysicalMaterial({
             color: GLASS,
             roughness: 0.06,
@@ -231,7 +299,7 @@ export default function Astronaut({ brain, onBoop, onHover, lite }: AstronautPro
     puff.size = (0.045 + Math.random() * 0.03) * (speed > 0.6 ? 1.4 : 1);
   };
 
-  useFrame(({ camera, size, clock, viewport }, dt) => {
+  useFrame(({ camera, size, clock }, dt) => {
     const b = brain.current;
     const now = performance.now();
     const t = clock.elapsedTime;
@@ -275,9 +343,32 @@ export default function Astronaut({ brain, onBoop, onHover, lite }: AstronautPro
 
     // Zero-g drift: two out-of-step sines per axis, so the path never quite repeats.
     // It leans a little toward the cursor when it comes close.
+    // Dragging pulls it away from its spot; on release it springs back on the tether.
+    // The canvas covers the whole screen. Zooming the camera keeps the astronaut the size
+    // it was on its stage, and the stage's screen position becomes its home in world space.
+    const cam = camera as THREE.PerspectiveCamera;
+    const zoom = b.stage.h > 0 ? b.stage.h / size.height : 1;
+    if (Math.abs(cam.zoom - zoom) > 1e-4) {
+      cam.zoom = zoom;
+      cam.updateProjectionMatrix();
+    }
+    const worldH = WORLD_H / zoom;
+    const worldW = worldH * (size.width / size.height);
+    const toWorld = worldH / size.height;
+    const homeX = (b.stage.cx - size.width / 2) * toWorld;
+    const homeY = -(b.stage.cy - size.height / 2) * toWorld;
+    const pull = b.dragging || b.dragMoved;
+    // Kept on screen, so it can go anywhere on the page but not off it.
+    const limX = Math.max(0, worldW / 2 - 0.9);
+    const limY = Math.max(0, worldH / 2 - 1);
+    const goalX = THREE.MathUtils.clamp(homeX + b.drag.x * toWorld, -limX, limX) - homeX;
+    const goalY = THREE.MathUtils.clamp(homeY - b.drag.y * toWorld, -limY, limY) - homeY;
+    c.dragX = THREE.MathUtils.damp(c.dragX, pull ? goalX : 0, pull ? 18 : 3, dt);
+    c.dragY = THREE.MathUtils.damp(c.dragY, pull ? goalY : 0, pull ? 18 : 3, dt);
+    c.shock = THREE.MathUtils.damp(c.shock, b.dragging && b.dragMoved ? 1 : 0, 14, dt);
     rig.current.position.set(
-      float * (Math.sin(t * 0.21) * 0.5 + Math.sin(t * 0.53 + 1) * 0.12) + c.x * c.lean * 0.2,
-      BASE_Y + float * (Math.sin(t * 0.29) * 0.12 + Math.sin(t * 0.71 + 2) * 0.04) - c.y * c.lean * 0.12 + fling * 0.25,
+      float * (Math.sin(t * 0.21) * 0.5 + Math.sin(t * 0.53 + 1) * 0.12) + c.x * c.lean * 0.2 + homeX + c.dragX,
+      BASE_Y + homeY + float * (Math.sin(t * 0.29) * 0.12 + Math.sin(t * 0.71 + 2) * 0.04) - c.y * c.lean * 0.12 + fling * 0.25 + c.dragY,
       0,
     );
     rig.current.rotation.set(float * Math.sin(t * 0.23) * 0.08, 0, float * Math.sin(t * 0.17) * 0.2 - spin);
@@ -290,23 +381,27 @@ export default function Astronaut({ brain, onBoop, onHover, lite }: AstronautPro
     arms.current.forEach((arm, i) => {
       const side = SIDES[i];
       const wave = c.wave[i];
-      const sway = float * Math.sin(t * 1.3 + i * 1.7) * 0.18 + fling * 0.9;
+      const sway = float * Math.sin(t * 1.3 + i * 1.7) * 0.18 + fling * 0.9 + c.shock * (0.9 + float * Math.sin(t * 14 + i * 2.4) * 0.3);
       const flap = float * Math.sin(t * 9) * 0.35;
       arm.rotation.z = side * (ARM_REST + sway + wave * (ARM_WAVE - ARM_REST + flap));
       arm.rotation.x = float * Math.sin(t * 0.9 + i) * 0.15;
     });
     // Legs kick slowly out of step.
     legs.current.forEach((leg, i) => {
-      leg.rotation.x = float * Math.sin(t * 1.1 + i * Math.PI) * 0.28;
+      leg.rotation.x = float * Math.sin(t * 1.1 + i * Math.PI) * 0.28 + c.shock * float * Math.sin(t * 16 + i * Math.PI) * 0.35;
       leg.rotation.z = SIDES[i] * (0.12 + float * Math.sin(t * 0.8 + i) * 0.05 + fling * 0.3);
     });
 
     // Blink, and squint a little while grinning.
-    const open = isBlinking(b, now) ? 0.08 : 1 - c.grin * 0.25;
+    const open = isBlinking(b, now) && c.shock < 0.5 ? 0.08 : 1 - c.grin * 0.25 + c.shock * 0.3;
     eyeL.current.scale.y = eyeR.current.scale.y = THREE.MathUtils.damp(eyeL.current.scale.y, open, 40, dt);
+    eyeL.current.scale.x = eyeR.current.scale.x = 1 + c.shock * 0.25;
 
-    smile.current.visible = c.grin < 0.5;
-    grin.current.visible = c.grin >= 0.5;
+    const startled = c.shock > 0.5;
+    gasp.current.visible = startled;
+    gasp.current.scale.setScalar(0.6 + c.shock * 0.4 + float * Math.sin(t * 18) * 0.05 * c.shock);
+    smile.current.visible = !startled && c.grin < 0.5;
+    grin.current.visible = !startled && c.grin >= 0.5;
     grin.current.scale.y = Math.max(0.01, c.grin);
 
     antenna.current.rotation.z = -0.35 + float * Math.sin(t * 2.2) * 0.07;
@@ -331,7 +426,7 @@ export default function Astronaut({ brain, onBoop, onHover, lite }: AstronautPro
 
     // The tether runs in from off-screen bottom left and goes slack toward the pack.
     clip.current.getWorldPosition(tmp.end);
-    tmp.start.set(-viewport.width / 2 - 0.4, -viewport.height / 2 - 0.4, -0.6);
+    tmp.start.set(-worldW / 2 - 0.4, -worldH / 2 - 0.4, -0.6);
     tmp.mid.set(
       THREE.MathUtils.lerp(tmp.start.x, tmp.end.x, 0.65),
       THREE.MathUtils.lerp(tmp.start.y, tmp.end.y, 0.15) + float * Math.sin(t * 0.8) * 0.06,
@@ -349,9 +444,13 @@ export default function Astronaut({ brain, onBoop, onHover, lite }: AstronautPro
       <group
         ref={rig}
         position={[0, BASE_Y, 0]}
+        onPointerDown={e => {
+          e.stopPropagation();
+          onDragStart(e.clientX, e.clientY);
+        }}
         onClick={e => {
           e.stopPropagation();
-          onBoop();
+          if (!brain.current.dragMoved) onBoop();
         }}
         onPointerOver={e => {
           e.stopPropagation();
@@ -608,6 +707,18 @@ export default function Astronaut({ brain, onBoop, onHover, lite }: AstronautPro
               <circleGeometry args={[0.095, 32, Math.PI, Math.PI]} />
             </mesh>
 
+            {/* open "oh" mouth, shown while being dragged */}
+            <mesh
+              ref={gasp}
+              position={[0, -0.2, mouthZ + 0.006]}
+              rotation={[0.22, 0, 0]}
+              scale={[0.6, 0.8, 1]}
+              material={mats.mouth}
+              visible={false}
+            >
+              <circleGeometry args={[0.085, 32]} />
+            </mesh>
+
             {/* glass visor and its glint */}
             <group scale={HELMET}>
               <mesh position={[0, 0, DOME_Z]} rotation={[Math.PI / 2, 0, 0]} material={mats.glass}>
@@ -636,14 +747,7 @@ export default function Astronaut({ brain, onBoop, onHover, lite }: AstronautPro
         ))}
       </group>
 
-      <QuadraticBezierLine
-        ref={tether}
-        start={ORIGIN}
-        end={ORIGIN}
-        color={TETHER}
-        lineWidth={2}
-        frustumCulled={false}
-      />
+      <QuadraticBezierLine ref={tether} start={ORIGIN} end={ORIGIN} color={TETHER} lineWidth={2} frustumCulled={false} />
     </>
   );
 }

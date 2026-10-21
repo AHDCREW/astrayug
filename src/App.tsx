@@ -6,6 +6,8 @@ import Logo from './components/Logo';
 import SkipOnError from './components/SkipOnError';
 import { FEST_NAME, SOCIALS } from './config';
 import { googleCalendarUrl } from './lib/calendar';
+import { useTheme } from './lib/theme';
+import ThemeToggle from './components/ThemeToggle';
 import Hero from './sections/Hero';
 
 const MascotCanvas = lazy(() => import('./components/mascot/MascotCanvas'));
@@ -29,23 +31,27 @@ function useWhenIdle() {
 
 export default function App() {
   const showMascot = useWhenIdle();
+  const { theme } = useTheme();
 
   return (
     <>
-      <ClickSpark sparkColor="#0e0e10" sparkCount={7} sparkSize={8} sparkRadius={18} duration={420}>
+      <ClickSpark sparkColor={theme === 'dark' ? '#f4f3ef' : '#0e0e10'} sparkCount={7} sparkSize={8} sparkRadius={18} duration={420}>
         {/* The trail comes first and the page is positioned after it, so the trail paints underneath. */}
         <CursorTrail />
         <div className="relative flex min-h-svh flex-col">
           <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 pt-5 sm:px-8 sm:pt-7">
             <Logo />
-            <a
-              href={googleCalendarUrl()}
-              target="_blank"
-              rel="noreferrer"
-              className="rounded-full border border-line px-4 py-2 text-sm font-medium transition-colors hover:border-ink"
-            >
-              Remind me
-            </a>
+            <div className="flex items-center gap-2">
+              <ThemeToggle />
+              <a
+                href={googleCalendarUrl()}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-full border border-line px-4 py-2 text-sm font-medium transition-colors hover:border-ink"
+              >
+                Remind me
+              </a>
+            </div>
           </header>
 
           <main className="flex flex-1 flex-col">
