@@ -4,9 +4,9 @@ import * as THREE from 'three';
 import Astronaut from './Astronaut';
 import { useMascotBrain } from './useMascotBrain';
 
-// The astronaut peeking up from the bottom of the screen. Loaded lazily so the
-// countdown paints first. Events come from #root, so the canvas itself never
-// blocks clicks on the page around it.
+// The astronaut floating in zero-g below the countdown, tethered from off-screen.
+// Loaded lazily so the countdown paints first. Events come from #root, so the
+// canvas itself never blocks clicks on the page around it.
 export default function MascotCanvas() {
   const { brain, boop, hover } = useMascotBrain();
 

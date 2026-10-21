@@ -2,6 +2,7 @@
 
 @theme {
   --font-sans: 'Mona Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-logo: 'Hubot Sans Variable', var(--font-sans);
 
   --color-paper: #f4f3ef;
   --color-ink: #0e0e10;
@@ -20,6 +21,12 @@ body {
   color: var(--color-ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+}
+
+/* Set by components/Cursor.tsx while it draws its own cursor. */
+.custom-cursor,
+.custom-cursor * {
+  cursor: none !important;
 }
 
 ::selection {

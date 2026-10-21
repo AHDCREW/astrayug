@@ -1,7 +1,26 @@
 import Countdown from '../components/Countdown';
+import DecryptedText from '../components/reactbits/DecryptedText/DecryptedText';
+import ShinyText from '../components/reactbits/ShinyText/ShinyText';
+import StarBorder from '../components/reactbits/StarBorder/StarBorder';
 import { BOOKING_OPENS, BOOKING_TIMEZONE, BOOKING_TIMEZONE_LABEL, BOOKING_URL } from '../config';
 import { downloadIcs, googleCalendarUrl } from '../lib/calendar';
 import { useCountdown } from '../lib/countdown';
+
+// DecryptedText's loop scrambles the title out and back in. With reduced motion it
+// skips the way back in and stays scrambled, so the loop is left off then.
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// The primary call to action: an ink pill with a saffron star running round its
+// edge, which laps the button on hover.
+const CTA = {
+  theme: 'dark',
+  radius: 999,
+  color: '#ff5b1f',
+  backgroundColor: 'var(--color-ink)',
+  textColor: 'var(--color-paper)',
+  sparkle: true,
+  className: 'text-[15px]',
+} as const;
 
 const festDate = new Intl.DateTimeFormat('en-GB', {
   weekday: 'long',
@@ -39,14 +58,24 @@ export default function Hero() {
     <section className="mx-auto flex w-full max-w-6xl flex-1 flex-col items-center justify-center px-5 py-3 text-center sm:px-8">
       <p className="flex items-center gap-2 text-xs font-semibold tracking-[0.2em] text-muted uppercase">
         <span className="h-1.5 w-1.5 rounded-full bg-saffron" />
-        Techfest 2026
+        <ShinyText text="Techfest 2026" color="#6b6b70" shineColor="#ff5b1f" speed={2.2} delay={2.5} shineWidth={30} />
       </p>
 
+      {/* Same scramble as the logo: decrypts on load, again on hover, and every few seconds. */}
       <h1
         className="mt-[2svh] text-[clamp(2.6rem,min(11.5vw,14.5svh),10rem)] leading-[0.85] font-black tracking-[-0.035em]"
         style={{ fontStretch: '115%' }}
       >
-        ASTRAYUGA
+        <DecryptedText
+          text="ASTRAYUGA"
+          animateOn="inViewHover"
+          sequential
+          useOriginalCharsOnly
+          speed={50}
+          scrambleColor="#ff5b1f"
+          loop={!reducedMotion}
+          loopDelay={6000}
+        />
       </h1>
 
       <p className="mt-[3svh] max-w-md text-base text-muted sm:max-w-none sm:text-lg">
@@ -67,22 +96,14 @@ export default function Hero() {
 
       <div className="mt-[4svh] flex flex-wrap items-center justify-center gap-x-6 gap-y-3">
         {left.done ? (
-          <a
-            href={BOOKING_URL}
-            className="rounded-full bg-ink px-6 py-3 text-[15px] font-medium text-paper transition-colors hover:bg-saffron"
-          >
+          <StarBorder as="a" href={BOOKING_URL} {...CTA}>
             Book your pass
-          </a>
+          </StarBorder>
         ) : (
           <>
-            <a
-              href={googleCalendarUrl()}
-              target="_blank"
-              rel="noreferrer"
-              className="rounded-full bg-ink px-6 py-3 text-[15px] font-medium text-paper transition-colors hover:bg-saffron"
-            >
+            <StarBorder as="a" href={googleCalendarUrl()} target="_blank" rel="noreferrer" {...CTA}>
               Remind me on 5 Dec
-            </a>
+            </StarBorder>
             <button
               type="button"
               onClick={downloadIcs}
