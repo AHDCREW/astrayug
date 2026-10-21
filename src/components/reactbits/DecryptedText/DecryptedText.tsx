@@ -1,23 +1,25 @@
 'use client';
 
+// Local change from the React Bits original: the root is a plain <span> rather than
+// motion.span. Nothing here animated it through motion, and dropping it keeps the
+// `motion` package (about 44 kB gzipped) out of the bundle.
 import {
   useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type ComponentPropsWithoutRef,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent
 } from 'react';
-import { motion } from 'motion/react';
-import type { HTMLMotionProps } from 'motion/react';
 
 const FADE_FLOOR = 0.16;
 const FADE_PEAK = 0.62;
 const FADE_LEAD = 6;
 const SETTLE = 'color 0.7s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1)';
 
-interface DecryptedTextProps extends HTMLMotionProps<'span'> {
+interface DecryptedTextProps extends ComponentPropsWithoutRef<'span'> {
   text: string;
   speed?: number;
   maxIterations?: number;
@@ -593,7 +595,7 @@ export default function DecryptedText({
       : {};
 
   return (
-    <motion.span
+    <span
       ref={containerRef}
       className={`inline-block whitespace-pre-wrap ${parentClassName}`}
       {...animateProps}
@@ -636,6 +638,6 @@ export default function DecryptedText({
           )
         )}
       </span>
-    </motion.span>
+    </span>
   );
 }

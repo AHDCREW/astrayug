@@ -30,6 +30,22 @@ A real-time 3D mascot built from three.js primitives with react-three-fiber. The
 
 It's lazy-loaded, so the countdown paints first. It respects `prefers-reduced-motion`, and a hidden "Boop the astronaut" button makes it keyboard-accessible.
 
+## Low-end and high-end devices
+
+The page scales its effects to the device:
+
+- **The first guess:** [`src/lib/device.ts`](src/lib/device.ts) makes a one-off guess from what the browser reports. Low end means 2 GB or less of memory, 4 cores or fewer, Save-Data, or a 2G connection.
+- **The mascot adapts at runtime:**
+  - It starts at the device's pixel ratio (capped at 2), or at 1x on low-end devices.
+  - drei's `PerformanceMonitor` then steps the ratio down when frames drop and back up when there's headroom.
+  - If frames still drop at 1x, it switches to a lite path: plain materials without clearcoat or sheen, no reflection environment, and fewer polygons.
+  - It stops rendering while scrolled off-screen.
+  - The wrapper's `data-quality` attribute shows `full` or `lite`.
+- **The mascot loads late and fails safely:** it only starts downloading once the page is idle. It's wrapped in [`SkipOnError`](src/components/SkipOnError.tsx), so without WebGL the countdown still works.
+- **Lighter extras on low-end devices:**
+  - The pixel trail renders at 1x (1.5x at most elsewhere), plots fewer points and skips its colour ramp.
+  - The button's star border skips its sparkle dust.
+
 ## Design
 
 - Off-white `#F4F3EF`, near-black `#0E0E10`, one accent: saffron `#FF5B1F`.
@@ -41,7 +57,7 @@ It's lazy-loaded, so the countdown paints first. It respects `prefers-reduced-mo
   - **Counter**: rolling countdown digits.
   - **ClickSpark**: small monochrome sparks on click.
   - **PixelTrail**: the cursor trail.
-  - **DecryptedText**: the logo and the big title scramble into saffron letters and decrypt back. The logo does it on hover. The title also decrypts on load and re-scrambles every few seconds, except with `prefers-reduced-motion`. It needs `motion`.
+  - **DecryptedText**: the logo and the big title scramble into saffron letters and decrypt back. The logo does it on hover. The title also decrypts on load and re-scrambles every few seconds, except with `prefers-reduced-motion`. It's changed locally to render a plain `<span>` instead of `motion.span`, which keeps the `motion` package out of the bundle.
   - **ShinyText**: a saffron sweep across the "Techfest 2026" label.
   - **StarBorder**: a saffron star running round the main button, lapping it on hover.
 

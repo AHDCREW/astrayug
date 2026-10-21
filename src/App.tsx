@@ -1,15 +1,35 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import ClickSpark from './components/reactbits/ClickSpark/ClickSpark';
 import Cursor from './components/Cursor';
 import CursorTrail from './components/CursorTrail';
 import Logo from './components/Logo';
+import SkipOnError from './components/SkipOnError';
 import { FEST_NAME, SOCIALS } from './config';
 import { googleCalendarUrl } from './lib/calendar';
 import Hero from './sections/Hero';
 
 const MascotCanvas = lazy(() => import('./components/mascot/MascotCanvas'));
 
+// The mascot is about a megabyte of three.js, so it only starts downloading once the
+// page has painted and gone idle. That way it never competes with the countdown.
+// Safari has no requestIdleCallback, so it gets a short timeout instead.
+function useWhenIdle() {
+  const [idle, setIdle] = useState(false);
+  useEffect(() => {
+    const go = () => setIdle(true);
+    if (typeof window.requestIdleCallback === 'function') {
+      const id = window.requestIdleCallback(go, { timeout: 2000 });
+      return () => window.cancelIdleCallback(id);
+    }
+    const id = window.setTimeout(go, 600);
+    return () => window.clearTimeout(id);
+  }, []);
+  return idle;
+}
+
 export default function App() {
+  const showMascot = useWhenIdle();
+
   return (
     <>
       <ClickSpark sparkColor="#0e0e10" sparkCount={7} sparkSize={8} sparkRadius={18} duration={420}>
@@ -44,9 +64,13 @@ export default function App() {
                   ))}
                 </ul>
               </footer>
-              <Suspense fallback={null}>
-                <MascotCanvas />
-              </Suspense>
+              {showMascot && (
+                <SkipOnError>
+                  <Suspense fallback={null}>
+                    <MascotCanvas />
+                  </Suspense>
+                </SkipOnError>
+              )}
             </div>
           </main>
         </div>

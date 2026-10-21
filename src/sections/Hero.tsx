@@ -5,20 +5,22 @@ import StarBorder from '../components/reactbits/StarBorder/StarBorder';
 import { BOOKING_OPENS, BOOKING_TIMEZONE, BOOKING_TIMEZONE_LABEL, BOOKING_URL } from '../config';
 import { downloadIcs, googleCalendarUrl } from '../lib/calendar';
 import { useCountdown } from '../lib/countdown';
+import { lowEnd } from '../lib/device';
 
 // DecryptedText's loop scrambles the title out and back in. With reduced motion it
 // skips the way back in and stays scrambled, so the loop is left off then.
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // The primary call to action: an ink pill with a saffron star running round its
-// edge, which laps the button on hover.
+// edge, which laps the button on hover. The sparkle dust it sheds is extra canvas
+// work every frame, so low-end devices go without.
 const CTA = {
   theme: 'dark',
   radius: 999,
   color: '#ff5b1f',
   backgroundColor: 'var(--color-ink)',
   textColor: 'var(--color-paper)',
-  sparkle: true,
+  sparkle: !lowEnd,
   className: 'text-[15px]',
 } as const;
 

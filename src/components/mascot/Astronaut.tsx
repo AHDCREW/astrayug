@@ -74,9 +74,13 @@ interface AstronautProps {
   brain: RefObject<Brain>;
   onBoop: () => void;
   onHover: (on: boolean) => void;
+  // Cheaper materials and rounder-by-fewer-polygons spheres, for slower devices.
+  lite: boolean;
 }
 
-export default function Astronaut({ brain, onBoop, onHover }: AstronautProps) {
+export default function Astronaut({ brain, onBoop, onHover, lite }: AstronautProps) {
+  // Segment count for curved geometry: full detail, or about half on the lite path.
+  const seg = (n: number) => (lite ? Math.max(12, Math.round(n / 2)) : n);
   const rig = useRef<THREE.Group>(null!);
   const body = useRef<THREE.Group>(null!);
   const head = useRef<THREE.Group>(null!);
@@ -100,29 +104,27 @@ export default function Astronaut({ brain, onBoop, onHover }: AstronautProps) {
   const puffs = useRef<Puff[]>(Array.from({ length: PUFFS }, () => ({ age: 1, life: 1, size: 0, vel: new THREE.Vector3() })));
   const puffGeometry = useMemo(() => new THREE.SphereGeometry(1, 16, 12), []);
 
-  const mats = useMemo(
-    () => ({
-      shell: new THREE.MeshPhysicalMaterial({ color: SHELL, roughness: 0.4, clearcoat: 1, clearcoatRoughness: 0.25 }),
-      trim: new THREE.MeshPhysicalMaterial({ color: SAFFRON, roughness: 0.38, clearcoat: 0.6, clearcoatRoughness: 0.3 }),
-      face: new THREE.MeshPhysicalMaterial({
-        color: FACE,
-        roughness: 0.5,
-        clearcoat: 1,
-        clearcoatRoughness: 0.2,
-        sheen: 0.5,
-        sheenColor: new THREE.Color('#ffd9df'),
-      }),
-      eye: new THREE.MeshPhysicalMaterial({ color: EYE, roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.04 }),
+  const mats = useMemo(() => {
+    // Clearcoat and sheen give the glossy toy-plastic look, but they're the most
+    // expensive part of the shading. The lite path uses plain standard materials.
+    const gloss = (color: string, roughness: number, extra: THREE.MeshPhysicalMaterialParameters = {}) =>
+      lite
+        ? new THREE.MeshStandardMaterial({ color, roughness, metalness: extra.metalness ?? 0 })
+        : new THREE.MeshPhysicalMaterial({ color, roughness, ...extra });
+    return {
+      shell: gloss(SHELL, 0.4, { clearcoat: 1, clearcoatRoughness: 0.25 }),
+      trim: gloss(SAFFRON, 0.38, { clearcoat: 0.6, clearcoatRoughness: 0.3 }),
+      face: gloss(FACE, 0.5, { clearcoat: 1, clearcoatRoughness: 0.2, sheen: 0.5, sheenColor: new THREE.Color('#ffd9df') }),
+      eye: gloss(EYE, 0.12, { clearcoat: 1, clearcoatRoughness: 0.04 }),
       shine: new THREE.MeshBasicMaterial({ color: '#ffffff' }),
       mouth: new THREE.MeshStandardMaterial({ color: MOUTH, roughness: 0.6, side: THREE.DoubleSide }),
-      ring: new THREE.MeshPhysicalMaterial({ color: RING, roughness: 0.5, clearcoat: 0.5 }),
-      metal: new THREE.MeshPhysicalMaterial({ color: METAL, roughness: 0.35, metalness: 0.6, clearcoat: 0.3 }),
+      ring: gloss(RING, 0.5, { clearcoat: 0.5 }),
+      metal: gloss(METAL, 0.35, { metalness: 0.6, clearcoat: 0.3 }),
       blush: new THREE.MeshBasicMaterial({ map: blushTexture(), transparent: true, depthWrite: false, opacity: 0.6 }),
       glint: new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.8 }),
       puff: new THREE.MeshStandardMaterial({ color: PUFF, roughness: 1, transparent: true, opacity: 0.85, depthWrite: false }),
-    }),
-    [],
-  );
+    };
+  }, [lite]);
 
   useEffect(
     () => () => {
@@ -154,7 +156,7 @@ export default function Astronaut({ brain, onBoop, onHover }: AstronautProps) {
     puff.size = (0.045 + Math.random() * 0.03) * (speed > 0.6 ? 1.4 : 1);
   };
 
-  useFrame(({ camera, gl, clock, viewport }, dt) => {
+  useFrame(({ camera, size, clock, viewport }, dt) => {
     const b = brain.current;
     const now = performance.now();
     const t = clock.elapsedTime;
@@ -163,11 +165,12 @@ export default function Astronaut({ brain, onBoop, onHover }: AstronautProps) {
     const float = b.reduced ? 0 : 1;
 
     // Project the head centre to screen space so tracking is relative to where it really is.
-    const rect = gl.domElement.getBoundingClientRect();
+    // `size` is the canvas's on-screen box, which R3F re-measures on resize and scroll,
+    // so there's no layout read here every frame.
     head.current.getWorldPosition(tmp.anchor).project(camera);
     const screen = {
-      x: rect.left + ((tmp.anchor.x + 1) / 2) * rect.width,
-      y: rect.top + ((1 - tmp.anchor.y) / 2) * rect.height,
+      x: size.left + ((tmp.anchor.x + 1) / 2) * size.width,
+      y: size.top + ((1 - tmp.anchor.y) / 2) * size.height,
     };
 
     const look = lookTarget(b, screen, now);
@@ -285,10 +288,10 @@ export default function Astronaut({ brain, onBoop, onHover }: AstronautProps) {
           <group ref={body}>
             {/* torso, neck ring, chest panel */}
             <mesh position={[0, -1.42, 0]} scale={[1.25, 1, 0.95]} material={mats.shell}>
-              <capsuleGeometry args={[0.5, 0.35, 12, 40]} />
+              <capsuleGeometry args={[0.5, 0.35, 12, seg(40)]} />
             </mesh>
             <mesh position={[0, -0.9, 0]} rotation={[Math.PI / 2, 0, 0]} material={mats.ring}>
-              <torusGeometry args={[0.46, 0.085, 20, 56]} />
+              <torusGeometry args={[0.46, 0.085, 20, seg(56)]} />
             </mesh>
             <RoundedBox args={[0.5, 0.3, 0.1]} radius={0.04} position={[0, -1.38, 0.43]} material={mats.trim} />
             {[mats.shine, mats.eye, mats.shine].map((m, i) => (
@@ -332,7 +335,7 @@ export default function Astronaut({ brain, onBoop, onHover }: AstronautProps) {
                   <torusGeometry args={[0.155, 0.045, 12, 32]} />
                 </mesh>
                 <mesh position={[0, -0.79, 0]} scale={[1, 0.9, 0.9]} material={mats.ring}>
-                  <sphereGeometry args={[0.19, 32, 32]} />
+                  <sphereGeometry args={[0.19, seg(32), seg(32)]} />
                 </mesh>
               </group>
             ))}
@@ -361,19 +364,19 @@ export default function Astronaut({ brain, onBoop, onHover }: AstronautProps) {
           <group ref={head}>
             {/* helmet shell, visor gasket, face */}
             <mesh scale={[1, 0.95, 0.97]} material={mats.shell}>
-              <sphereGeometry args={[1, 96, 96]} />
+              <sphereGeometry args={[1, seg(96), seg(96)]} />
             </mesh>
             <mesh position={[0, FC.y, FC.z - 0.03]} scale={[FR.x + 0.035, FR.y + 0.035, FR.z]} material={mats.ring}>
-              <sphereGeometry args={[1, 64, 64]} />
+              <sphereGeometry args={[1, seg(64), seg(64)]} />
             </mesh>
             <mesh position={[0, FC.y, FC.z]} scale={[FR.x, FR.y, FR.z]} material={mats.face}>
-              <sphereGeometry args={[1, 64, 64]} />
+              <sphereGeometry args={[1, seg(64), seg(64)]} />
             </mesh>
 
             {/* ear caps and antenna */}
             {SIDES.map(side => (
               <mesh key={side} position={[side * 0.97, 0, 0]} rotation={[0, 0, Math.PI / 2]} material={mats.trim}>
-                <cylinderGeometry args={[0.2, 0.2, 0.16, 48]} />
+                <cylinderGeometry args={[0.2, 0.2, 0.16, seg(48)]} />
               </mesh>
             ))}
             <group ref={antenna} position={[1.02, 0.12, 0]} rotation={[0, 0, -0.35]}>
@@ -381,7 +384,7 @@ export default function Astronaut({ brain, onBoop, onHover }: AstronautProps) {
                 <cylinderGeometry args={[0.018, 0.018, 0.42, 12]} />
               </mesh>
               <mesh position={[0, 0.45, 0]} material={mats.trim}>
-                <sphereGeometry args={[0.065, 32, 32]} />
+                <sphereGeometry args={[0.065, seg(32), seg(32)]} />
               </mesh>
             </group>
 
@@ -393,7 +396,7 @@ export default function Astronaut({ brain, onBoop, onHover }: AstronautProps) {
               ].map(({ ref, x }) => (
                 <group key={x} ref={ref} position={[x, EYE_Y, eyeZ]}>
                   <mesh scale={[1, 1.18, 0.55]} material={mats.eye}>
-                    <sphereGeometry args={[0.155, 48, 48]} />
+                    <sphereGeometry args={[0.155, seg(48), seg(48)]} />
                   </mesh>
                   <mesh position={[-0.054, 0.072, 0.082]} material={mats.shine}>
                     <sphereGeometry args={[0.043, 24, 24]} />
