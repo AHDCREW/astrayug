@@ -114,7 +114,7 @@ export default function Cursor() {
       ref={layerRef}
       aria-hidden="true"
       data-state="idle"
-      className="group pointer-events-none fixed inset-0 z-100 overflow-hidden opacity-0 transition-opacity duration-200 data-shown:opacity-100"
+      className="group pointer-events-none fixed inset-0 z-100 overflow-hidden [view-transition-name:cursor] opacity-0 transition-opacity duration-200 data-shown:opacity-100"
     >
       <div ref={ringRef} className="absolute top-0 left-0">
         <div className="size-8 -translate-1/2 rounded-full border-[1.5px] border-ink transition-[width,height,background-color,border-color] duration-300 ease-out group-data-[state=down]:size-6 group-data-[state=hover]:size-14 group-data-[state=hover]:bg-saffron/10 motion-reduce:transition-none" />

@@ -30,9 +30,11 @@ A real-time 3D mascot built from three.js primitives with react-three-fiber. The
 
 It's lazy-loaded, so the countdown paints first. It respects `prefers-reduced-motion`, and a hidden "Boop the astronaut" button makes it keyboard-accessible.
 
-## Light mode's sun
+## Day and night
 
-In light mode a sun crosses the page every 15 seconds: it rises bottom left, arcs over the top and sets bottom right, with golden hour and a short twilight either side. The same sun lights the astronaut, glints off its gold visor, and casts the title's shadow. Dark mode has none of it. The day's length and shape are in [`src/lib/sun.ts`](src/lib/sun.ts), the sky is [`src/components/Sun.tsx`](src/components/Sun.tsx) with its styles in `index.css`, and the astronaut's side is [`Sunlight.tsx`](src/components/mascot/Sunlight.tsx) and the glint in `Astronaut.tsx`. With reduced motion the sun holds still, mid-morning.
+The page runs a 30-second day and night on a loop. By day it's in light mode, and a sun rises bottom left, arcs over the top and sets bottom right. At sunset it turns to dark mode, and a full moon rises bottom left with the stars coming out, crosses the same way, and sets as the sun comes back up. Each turn sweeps in from the bottom left with a soft edge. The sun or moon lights the astronaut and glints off its gold visor, and the sun casts the title's shadow. The theme toggle skips ahead to the next sunset or sunrise.
+
+The clock is [`src/lib/sky.ts`](src/lib/sky.ts), which has the day and night lengths. The theme follows it in [`src/lib/theme.tsx`](src/lib/theme.tsx). The sky itself is [`src/components/Sky.tsx`](src/components/Sky.tsx), with its styles in `index.css`. The astronaut's side is [`Lighting.tsx`](src/components/mascot/Lighting.tsx) and the glint in `Astronaut.tsx`. With reduced motion the clock stops: the sun or moon holds still, and the theme only changes with the toggle.
 
 ## Low-end and high-end devices
 

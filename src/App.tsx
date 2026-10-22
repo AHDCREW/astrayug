@@ -4,7 +4,7 @@ import Cursor from './components/Cursor';
 import CursorTrail from './components/CursorTrail';
 import Logo from './components/Logo';
 import SkipOnError from './components/SkipOnError';
-import Sun from './components/Sun';
+import Sky from './components/Sky';
 import { FEST_NAME, SOCIALS } from './config';
 import { googleCalendarUrl } from './lib/calendar';
 import { useTheme } from './lib/theme';
@@ -36,8 +36,9 @@ export default function App() {
 
   return (
     <>
-      {/* Light mode's sky, with the sun crossing it. It's first, so it paints under everything. */}
-      <Sun />
+      {/* The sky, with the sun crossing it by day and the moon by night. It's first, so it
+          paints under everything. */}
+      <Sky />
       <ClickSpark sparkColor={theme === 'dark' ? '#f4f3ef' : '#0e0e10'} sparkCount={7} sparkSize={8} sparkRadius={18} duration={420}>
         {/* The trail comes first and the page is positioned after it, so the trail paints underneath. */}
         <CursorTrail />

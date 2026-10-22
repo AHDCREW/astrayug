@@ -63,52 +63,55 @@ body {
   color: #fff;
 }
 
-/* Light mode's sky, behind the page (components/Sun.tsx sets the variables). Dark mode
-   has no sun. */
+/* The sky behind the page: the sun by day, the moon and stars by night.
+   components/Sky.tsx sets the variables, and each theme shows only its own half. */
 .sky {
+  --horizon: 100vh;
   --sun-x: -100vmax;
   --sun-y: -100vmax;
-  --horizon: 100vh;
-  --warmth: 0;
+  --sun-warmth: 0;
+  --moon-x: -100vmax;
+  --moon-y: -100vmax;
+  --moon-warmth: 0;
+  --moon-tilt: 0deg;
   --glow: 0;
-  --dusk: 0;
-  --sun-size: clamp(44px, 8vmin, 92px);
+  --glow-x: -100vmax;
+  --twilight: 0;
+  /* The sun and moon look the same size in the sky, as they really do. */
+  --disc: clamp(44px, 8vmin, 92px);
   position: fixed;
   inset: 0;
   overflow: hidden;
   pointer-events: none;
 }
-:root.dark .sky {
+:root.dark .sky .by-day,
+:root:not(.dark) .sky .by-night {
   display: none;
 }
 .sky > *,
-.sun > * {
+.sun > *,
+.moon > *,
+.stars > * {
   position: absolute;
   top: 0;
   left: 0;
 }
 
-/* Golden hour warms the page up from the horizon. Twilight cools and dims it from above,
-   lightly, since this is still light mode. */
+/* Golden hour warms the page up from the horizon. */
 .sky-golden {
   inset: 0;
   background: linear-gradient(to top, rgb(255 160 96 / 0.3), rgb(255 190 140 / 0.12) 45%, rgb(255 210 170 / 0) 80%);
-  opacity: calc(var(--warmth) * (1 - var(--dusk)));
-  will-change: opacity;
-}
-.sky-dusk {
-  inset: 0;
-  background: linear-gradient(to bottom, rgb(104 120 190 / 0.2), rgb(150 140 200 / 0.1) 55%, rgb(255 168 140 / 0.12));
-  opacity: var(--dusk);
+  opacity: var(--sun-warmth);
   will-change: opacity;
 }
 
-/* The glow along the horizon on the sun's side, which lingers after sunset and comes
-   before sunrise. */
+/* The glow along the horizon. By day it's round the sun while the sun is low. By night
+   it's the afterglow after sunset, orange fading up into violet, and the same again
+   before dawn. */
 .sky-glow {
   width: 170vmin;
   height: 110vmin;
-  translate: calc(var(--sun-x) - 50%) calc(var(--horizon) - 50%);
+  translate: calc(var(--glow-x) - 50%) calc(var(--horizon) - 50%);
   background: radial-gradient(
     closest-side,
     rgb(255 120 60 / 0.5),
@@ -119,6 +122,49 @@ body {
   opacity: var(--glow);
   will-change: translate, opacity;
 }
+:root.dark .sky-glow {
+  background: radial-gradient(
+    closest-side,
+    rgb(255 110 50 / 0.32),
+    rgb(220 90 70 / 0.15) 35%,
+    rgb(120 60 120 / 0.07) 65%,
+    rgb(80 40 110 / 0)
+  );
+}
+
+/* Twilight: the deep blue that rises from the horizon after sunset, and sinks back into
+   it before dawn. The stars come out as it goes. */
+.sky-twilight {
+  inset: 0;
+  background: linear-gradient(to top, rgb(46 66 130 / 0.42), rgb(36 48 100 / 0.18) 35%, rgb(30 36 80 / 0) 70%);
+  opacity: var(--twilight);
+  will-change: opacity;
+}
+.stars {
+  inset: 0;
+  opacity: calc(1 - var(--twilight));
+  will-change: opacity;
+}
+.stars > * {
+  width: 1px;
+  height: 1px;
+  border-radius: 50%;
+  animation: twinkle 3.2s ease-in-out infinite alternate;
+}
+.stars > :last-child {
+  animation-duration: 4.6s;
+  animation-delay: -2s;
+}
+@keyframes twinkle {
+  to {
+    opacity: 0.5;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stars > * {
+    animation: none;
+  }
+}
 
 /* High up, the sun is a white-hot disc in a wide pale-gold halo. Low down, the air
    between scatters the blue out, and it's a deep orange disc in a red halo, squashed
@@ -127,7 +173,8 @@ body {
   translate: var(--sun-x) var(--sun-y);
   will-change: translate;
 }
-.sun > * {
+.sun > *,
+.moon > * {
   translate: -50% -50%;
   border-radius: 50%;
   will-change: opacity;
@@ -142,7 +189,7 @@ body {
     rgb(255 222 150 / 0.12) 40%,
     rgb(255 222 150 / 0)
   );
-  opacity: calc(1 - var(--warmth));
+  opacity: calc(1 - var(--sun-warmth));
 }
 .sun-halo.low {
   width: 75vmin;
@@ -154,18 +201,69 @@ body {
     rgb(255 160 110 / 0.06) 62%,
     rgb(255 160 110 / 0)
   );
-  opacity: var(--warmth);
+  opacity: var(--sun-warmth);
 }
 .sun-disc {
-  width: var(--sun-size);
-  height: var(--sun-size);
+  width: var(--disc);
+  height: var(--disc);
   background: radial-gradient(closest-side, #fff 50%, rgb(255 246 214) 64%, rgb(255 228 160 / 0.6) 80%, rgb(255 222 150 / 0));
-  opacity: calc(1 - var(--warmth));
-  scale: 1 calc(1 - 0.12 * var(--warmth) * var(--warmth));
+  opacity: calc(1 - var(--sun-warmth));
+  scale: 1 calc(1 - 0.12 * var(--sun-warmth) * var(--sun-warmth));
 }
 .sun-disc.low {
   background: radial-gradient(closest-side, #ffa463, #ff8640 45%, #ff6326 72%, rgb(255 91 31 / 0));
-  opacity: var(--warmth);
+  opacity: var(--sun-warmth);
+}
+
+/* The full moon: bright highlands, the grey maria of its near side, and Tycho's bright
+   crater, in a faint cold halo. Low down it goes amber and flattens like the sun. */
+.moon {
+  translate: var(--moon-x) var(--moon-y);
+  will-change: translate;
+}
+.moon-halo {
+  width: 50vmin;
+  height: 50vmin;
+  background: radial-gradient(
+    closest-side,
+    rgb(196 210 255 / 0.22),
+    rgb(170 190 255 / 0.07) 35%,
+    rgb(170 190 255 / 0)
+  );
+  opacity: calc(1 - var(--moon-warmth));
+}
+.moon-halo.low {
+  background: radial-gradient(
+    closest-side,
+    rgb(255 176 110 / 0.22),
+    rgb(255 150 90 / 0.07) 35%,
+    rgb(255 150 90 / 0)
+  );
+  opacity: var(--moon-warmth);
+}
+.moon-disc {
+  --mare: 116 120 138;
+  width: var(--disc);
+  height: var(--disc);
+  background:
+    radial-gradient(5% 5% at 46% 84%, rgb(255 255 255 / 0.7), transparent),
+    radial-gradient(18% 18% at 34% 30%, rgb(var(--mare) / 0.55), rgb(var(--mare) / 0.3) 60%, transparent),
+    radial-gradient(11% 11% at 57% 28%, rgb(var(--mare) / 0.5), transparent),
+    radial-gradient(13% 13% at 64% 45%, rgb(var(--mare) / 0.5), transparent),
+    radial-gradient(7% 7% at 83% 35%, rgb(var(--mare) / 0.55), transparent),
+    radial-gradient(22% 26% at 22% 52%, rgb(var(--mare) / 0.42), rgb(var(--mare) / 0.2) 60%, transparent),
+    radial-gradient(11% 11% at 42% 68%, rgb(var(--mare) / 0.38), transparent),
+    radial-gradient(9% 9% at 75% 60%, rgb(var(--mare) / 0.38), transparent),
+    radial-gradient(closest-side, #f6f3ea 55%, #e4e0d5);
+  box-shadow: 0 0 calc(var(--disc) * 0.3) rgb(214 224 255 / 0.3);
+  rotate: var(--moon-tilt);
+  scale: 1 calc(1 - 0.12 * var(--moon-warmth) * var(--moon-warmth));
+}
+.moon-disc.low {
+  background: rgb(255 150 70);
+  box-shadow: none;
+  mix-blend-mode: multiply;
+  opacity: calc(var(--moon-warmth) * 0.75);
 }
 
 /* What the sun casts a shadow from. */
@@ -189,4 +287,39 @@ body {
   to {
     clip-path: circle(150vmax at var(--tx, 50%) var(--ty, 0%));
   }
+}
+
+/* At sunset and sunrise (lib/theme.tsx), the new theme sweeps in slowly from the bottom
+   left, the east, behind a soft edge: night rising opposite the setting sun, and dawn
+   spreading from where the sun comes up. */
+@property --reveal {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+:root[data-reveal='sky']::view-transition-new(root) {
+  mask-image: radial-gradient(circle at 0% 100%, #000 calc(var(--reveal) - 22vmax), transparent var(--reveal));
+  animation: sky-reveal 2.2s ease-in-out both;
+}
+@keyframes sky-reveal {
+  from {
+    --reveal: 0px;
+  }
+  to {
+    --reveal: 170vmax;
+  }
+}
+
+/* The page can still be clicked while a transition runs, and the astronaut and the
+   cursor stay live on top of it instead of freezing in the old snapshot. */
+::view-transition {
+  pointer-events: none;
+}
+::view-transition-old(mascot),
+::view-transition-old(cursor) {
+  display: none;
+}
+::view-transition-new(mascot),
+::view-transition-new(cursor) {
+  animation: none;
 }

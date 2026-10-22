@@ -2,9 +2,8 @@ import { Environment, Lightformer, PerformanceMonitor } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber';
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { useTheme } from '../../lib/theme';
 import Astronaut from './Astronaut';
-import Sunlight from './Sunlight';
+import Lighting from './Lighting';
 import { useMascotBrain } from './useMascotBrain';
 
 // The canvas is small, so it can afford the screen's own pixel ratio: 3x on most phones,
@@ -21,8 +20,6 @@ const MAX_DPR = Math.min(window.devicePixelRatio || 1, 3);
 // path, which uses cheaper materials and no studio reflections.
 export default function MascotCanvas() {
   const { brain, boop, hover } = useMascotBrain();
-  // In light mode the page's sun lights the astronaut and glints off its visor.
-  const day = useTheme().theme === 'light';
   const wrap = useRef<HTMLDivElement>(null);
   const [dpr, setDpr] = useState(MAX_DPR);
   const [lite, setLite] = useState(false);
@@ -43,9 +40,10 @@ export default function MascotCanvas() {
   }, []);
 
   return (
-    // Centred under the countdown, and just wide enough for the head.
+    // Centred under the countdown, and just wide enough for the head. Named for view
+    // transitions, so it stays live on top while the theme changes (see index.css).
     <div className="flex h-full justify-center">
-      <div ref={wrap} data-quality={lite ? 'lite' : 'full'} className="relative aspect-[5/4] h-full max-w-full">
+      <div ref={wrap} data-quality={lite ? 'lite' : 'full'} className="relative aspect-[5/4] h-full max-w-full [view-transition-name:mascot]">
         <Canvas
           aria-hidden="true"
           frameloop={onScreen ? 'always' : 'never'}
@@ -90,7 +88,7 @@ export default function MascotCanvas() {
               atFloor.current = api.factor === 0;
             }}
           />
-          <Sunlight day={day} lite={lite} />
+          <Lighting lite={lite} />
           <directionalLight position={[-4, 2, -3]} intensity={0.7} />
           {/* Soft studio reflections, built locally so nothing is fetched from a CDN. */}
           {!lite && (
@@ -101,7 +99,7 @@ export default function MascotCanvas() {
               <Lightformer form="circle" intensity={3} position={[-3, 4, 5]} scale={1.5} />
             </Environment>
           )}
-          <Astronaut brain={brain} onBoop={boop} onHover={hover} lite={lite} day={day} />
+          <Astronaut brain={brain} onBoop={boop} onHover={hover} lite={lite} />
         </Canvas>
         <button
           type="button"

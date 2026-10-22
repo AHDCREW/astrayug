@@ -78,7 +78,7 @@ export default function Hero() {
 
       {/* ASTRA | YUGA, with a saffron bar for the "|". It sits on the baseline and is
           cap height (0.73em in Mona Sans). The spaces around it also keep the words
-          apart for screen readers. In light mode the sun casts its shadow (see Sun.tsx). */}
+          apart for screen readers. By day the sun casts its shadow (see Sky.tsx). */}
       <h1
         className="sunlit mt-[2svh] text-[clamp(2rem,min(11.5vw,14.5svh),9rem)] leading-[0.85] font-black tracking-[-0.035em] whitespace-nowrap"
         style={{ fontStretch: '115%' }}
