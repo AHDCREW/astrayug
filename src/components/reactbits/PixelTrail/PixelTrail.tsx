@@ -449,10 +449,12 @@ export default function PixelTrail({
       pointer: { x: 0, y: 0, at: 0, vx: 0, vy: 0, inside: false }
     };
 
-    const addTouch = (x: number, y: number, vx: number, vy: number) => {
+    // `join` links the point to the last one. A finger that lifts and lands somewhere
+    // else starts a new stroke, so it doesn't draw a line across the gap.
+    const addTouch = (x: number, y: number, vx: number, vy: number, join: boolean) => {
       const s = settingsRef.current;
       const { points } = state;
-      const last = points[points.length - 1];
+      const last = join ? points[points.length - 1] : undefined;
       let stops: string[] | undefined;
       if (last) {
         const dx = last.x - x;
@@ -703,7 +705,7 @@ export default function PixelTrail({
           pointer.vx = 0;
           pointer.vy = 0;
         }
-        addTouch(x, y, pointer.vx * s.flow * 0.3, pointer.vy * s.flow * 0.3);
+        addTouch(x, y, pointer.vx * s.flow * 0.3, pointer.vy * s.flow * 0.3, pointer.inside);
         wake();
       }
       pointer.x = x;

@@ -6,16 +6,16 @@ import { lowEnd, maxDpr } from '../../lib/device';
 import Astronaut from './Astronaut';
 import { useMascotBrain } from './useMascotBrain';
 
-// The astronaut floating in zero-g below the countdown, tethered from off-screen.
-// Loaded lazily so the countdown paints first. Events come from #root, so the
-// canvas itself never blocks clicks on the page around it.
+// The astronaut's head peeking up from the bottom of the screen, in the middle. Loaded
+// lazily so the countdown paints first. Events come from #root, so the canvas itself
+// never blocks clicks on the page around it.
 //
 // Quality follows the device. It starts from the low-end guess in lib/device and then
 // tracks the real frame rate: the pixel ratio steps down when frames drop and back up
 // when there's headroom. If frames still drop at 1x, it switches for good to the lite
 // path, which uses cheaper materials and no reflections.
 export default function MascotCanvas() {
-  const { brain, boop, hover, startDrag } = useMascotBrain();
+  const { brain, boop, hover } = useMascotBrain();
   const wrap = useRef<HTMLDivElement>(null);
   const [dpr, setDpr] = useState(lowEnd ? 1 : maxDpr);
   const [lite, setLite] = useState(lowEnd);
@@ -25,30 +25,6 @@ export default function MascotCanvas() {
 
   // Pixel ratio for the monitor's quality factor (0..1), in quarter steps.
   const fit = ({ factor }: { factor: number }) => setDpr(Math.round((1 + (maxDpr - 1) * factor) * 4) / 4);
-
-  // Report where the stage sits on screen, so the astronaut rests there and can leave it.
-  useEffect(() => {
-    const el = wrap.current;
-    if (!el) return;
-    const measure = () => {
-      const r = el.getBoundingClientRect();
-      Object.assign(brain.current.stage, {
-        cx: r.left + r.width / 2,
-        cy: r.top + r.height / 2,
-        h: r.height,
-      });
-    };
-    measure();
-    window.addEventListener('scroll', measure, { passive: true });
-    window.addEventListener('resize', measure);
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => {
-      window.removeEventListener('scroll', measure);
-      window.removeEventListener('resize', measure);
-      ro.disconnect();
-    };
-  }, [brain]);
 
   // Don't render frames nobody can see.
   useEffect(() => {
@@ -60,10 +36,9 @@ export default function MascotCanvas() {
   }, []);
 
   return (
-    <div ref={wrap} data-quality={lite ? 'lite' : 'full'} className="relative mx-auto h-full w-full max-w-[760px]">
-      {/* The canvas is a fixed full-screen overlay above the page; the wrapper above only
-          marks where the astronaut rests. */}
-      <div className="pointer-events-none fixed inset-0 z-50">
+    // Centred under the countdown, and just wide enough for the head.
+    <div className="flex h-full justify-center">
+      <div ref={wrap} data-quality={lite ? 'lite' : 'full'} className="relative aspect-[5/4] h-full max-w-full">
         <Canvas
           aria-hidden="true"
           frameloop={onScreen ? 'always' : 'never'}
@@ -117,22 +92,16 @@ export default function MascotCanvas() {
               <Lightformer form="circle" intensity={3} position={[-3, 4, 5]} scale={1.5} />
             </Environment>
           )}
-          <Astronaut
-            brain={brain}
-            onBoop={boop}
-            onHover={hover}
-            onDragStart={startDrag}
-            lite={lite}
-          />
+          <Astronaut brain={brain} onBoop={boop} onHover={hover} lite={lite} />
         </Canvas>
+        <button
+          type="button"
+          onClick={boop}
+          className="sr-only focus-visible:not-sr-only focus-visible:absolute focus-visible:bottom-4 focus-visible:left-1/2 focus-visible:-translate-x-1/2 focus-visible:rounded-full focus-visible:bg-ink focus-visible:px-4 focus-visible:py-2 focus-visible:text-sm focus-visible:text-paper"
+        >
+          Boop the astronaut
+        </button>
       </div>
-      <button
-        type="button"
-        onClick={boop}
-        className="sr-only focus-visible:not-sr-only focus-visible:absolute focus-visible:bottom-4 focus-visible:left-1/2 focus-visible:-translate-x-1/2 focus-visible:rounded-full focus-visible:bg-ink focus-visible:px-4 focus-visible:py-2 focus-visible:text-sm focus-visible:text-paper"
-      >
-        Boop the astronaut
-      </button>
     </div>
   );
 }

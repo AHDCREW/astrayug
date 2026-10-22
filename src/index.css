@@ -31,6 +31,19 @@
   --line: #2a2a30;
 }
 
+/* Phones and tablets held upright. The page is sized to fit the screen there (see
+   App.tsx), so it doesn't scroll, and dragging a finger draws the pixel trail instead.
+   Pinch zoom still works. Held sideways the page is too tall to fit, so it scrolls. */
+@custom-variant touch-portrait (@media (pointer: coarse) and (orientation: portrait));
+
+@media (pointer: coarse) and (orientation: portrait) {
+  html {
+    overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: pinch-zoom;
+  }
+}
+
 body {
   margin: 0;
   background: var(--paper);
