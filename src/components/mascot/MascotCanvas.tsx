@@ -2,29 +2,32 @@ import { Environment, Lightformer, PerformanceMonitor } from '@react-three/drei'
 import { Canvas } from '@react-three/fiber';
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { lowEnd, maxDpr } from '../../lib/device';
 import Astronaut from './Astronaut';
 import { useMascotBrain } from './useMascotBrain';
+
+// The canvas is small, so it can afford the screen's own pixel ratio: 3x on most phones,
+// where 2x looks soft.
+const MAX_DPR = Math.min(window.devicePixelRatio || 1, 3);
 
 // The astronaut's head peeking up from the bottom of the screen, in the middle. Loaded
 // lazily so the countdown paints first. Events come from #root, so the canvas itself
 // never blocks clicks on the page around it.
 //
-// Quality follows the device. It starts from the low-end guess in lib/device and then
-// tracks the real frame rate: the pixel ratio steps down when frames drop and back up
+// Quality follows the device's real frame rate. It starts at full quality everywhere,
+// since the canvas is small. The pixel ratio steps down when frames drop and back up
 // when there's headroom. If frames still drop at 1x, it switches for good to the lite
-// path, which uses cheaper materials and no reflections.
+// path, which uses cheaper materials and no studio reflections.
 export default function MascotCanvas() {
   const { brain, boop, hover } = useMascotBrain();
   const wrap = useRef<HTMLDivElement>(null);
-  const [dpr, setDpr] = useState(lowEnd ? 1 : maxDpr);
-  const [lite, setLite] = useState(lowEnd);
+  const [dpr, setDpr] = useState(MAX_DPR);
+  const [lite, setLite] = useState(false);
   const [onScreen, setOnScreen] = useState(true);
   // Whether the last step down already landed on 1x.
-  const atFloor = useRef(lowEnd);
+  const atFloor = useRef(false);
 
   // Pixel ratio for the monitor's quality factor (0..1), in quarter steps.
-  const fit = ({ factor }: { factor: number }) => setDpr(Math.round((1 + (maxDpr - 1) * factor) * 4) / 4);
+  const fit = ({ factor }: { factor: number }) => setDpr(Math.round((1 + (MAX_DPR - 1) * factor) * 4) / 4);
 
   // Don't render frames nobody can see.
   useEffect(() => {
@@ -56,22 +59,26 @@ export default function MascotCanvas() {
           dpr={dpr}
           camera={{ position: [0, 0, 7], fov: 24 }}
           gl={{
-            antialias: !lowEnd,
+            antialias: true,
             alpha: true,
             toneMapping: THREE.NeutralToneMapping,
           }}
         >
           {/* Samples the frame rate in ~1.5 s windows and moves the pixel ratio a quarter
-            of the way per step. Two drei quirks shape this:
-            - Its flip-flop fallback isn't used. It counts every step, even a steady 60 fps
-              device nudging up against the ceiling, so it would push healthy devices onto
-              the lite path.
+            of the way per step. Three things shape this:
+            - Slow is judged against the screen's own top frame rate, not drei's fixed 40
+              fps. A phone in low power mode runs at 30 fps however light the scene is, and
+              would otherwise be stepped all the way down to the lite path.
+            - drei's flip-flop fallback isn't used. It counts every step, even a steady 60
+              fps device nudging up against the ceiling, so it would push healthy devices
+              onto the lite path.
             - The ratio is set on every step, not in onChange. onChange misses the last step
               down to 0 once the monitor has re-rendered, which leaves the ratio above 1x. */}
           <PerformanceMonitor
-            factor={lowEnd ? 0 : 1}
+            factor={1}
             iterations={6}
             step={0.25}
+            bounds={rate => [Math.min(rate * 0.75, 45), rate * 0.9]}
             onIncline={fit}
             onDecline={api => {
               fit(api);
