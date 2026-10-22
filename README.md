@@ -30,6 +30,10 @@ A real-time 3D mascot built from three.js primitives with react-three-fiber. The
 
 It's lazy-loaded, so the countdown paints first. It respects `prefers-reduced-motion`, and a hidden "Boop the astronaut" button makes it keyboard-accessible.
 
+## Light mode's sun
+
+In light mode a sun crosses the page every 15 seconds: it rises bottom left, arcs over the top and sets bottom right, with golden hour and a short twilight either side. The same sun lights the astronaut, glints off its gold visor, and casts the title's shadow. Dark mode has none of it. The day's length and shape are in [`src/lib/sun.ts`](src/lib/sun.ts), the sky is [`src/components/Sun.tsx`](src/components/Sun.tsx) with its styles in `index.css`, and the astronaut's side is [`Sunlight.tsx`](src/components/mascot/Sunlight.tsx) and the glint in `Astronaut.tsx`. With reduced motion the sun holds still, mid-morning.
+
 ## Low-end and high-end devices
 
 The page scales its effects to the device:

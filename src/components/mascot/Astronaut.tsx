@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber';
 import { useEffect, useMemo, useRef, type RefObject } from 'react';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { sunAt, towardSun } from '../../lib/sun';
 import { lookTarget, type Brain } from './useMascotBrain';
 
 const SHELL = '#F6F4EE';
@@ -13,6 +14,13 @@ const NAVY = '#1D1B4F';
 const INTERIOR = '#2A2740';
 const LAMP = '#FFD36B';
 const GOLD = '#F2BF55';
+
+// Light mode, per frame: the visor's gold deepens to a full, saturated gold in the sun,
+// and the sun's glint on it is near white overhead and orange when it's low.
+const GOLD_SHADE = new THREE.Color(GOLD);
+const GOLD_SUNLIT = new THREE.Color('#FFB43C');
+const GLINT_HIGH = new THREE.Color('#FFF1D6');
+const GLINT_LOW = new THREE.Color('#FF8A3D');
 
 // The helmet is a shell with a round opening at the front, framed by a bezel. VISOR
 // is the opening's half-angle.
@@ -104,6 +112,42 @@ const smoothstep = (a: number, b: number, x: number) => {
   return t * t * (3 - 2 * t);
 };
 
+// The sun's glint on the visor, the way a camera sees the sun in a curved mirror: a
+// white-hot core, a saturated gold bloom round it, and four faint rays. It's drawn
+// additively and isn't tone mapped, so the core blows out past white.
+function glintTexture() {
+  const size = 128;
+  const c = size / 2;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const bloom = ctx.createRadialGradient(c, c, 0, c, c, c);
+  bloom.addColorStop(0, 'rgba(255,255,255,1)');
+  bloom.addColorStop(0.08, 'rgba(255,248,224,1)');
+  bloom.addColorStop(0.2, 'rgba(255,196,80,0.6)');
+  bloom.addColorStop(0.45, 'rgba(255,150,30,0.14)');
+  bloom.addColorStop(1, 'rgba(255,140,20,0)');
+  ctx.fillStyle = bloom;
+  ctx.fillRect(0, 0, size, size);
+  ctx.globalCompositeOperation = 'lighter';
+  for (const a of [0.3, 0.3 + Math.PI / 2]) {
+    ctx.save();
+    ctx.translate(c, c);
+    ctx.rotate(a);
+    const ray = ctx.createLinearGradient(-c, 0, c, 0);
+    ray.addColorStop(0, 'rgba(255,220,150,0)');
+    ray.addColorStop(0.5, 'rgba(255,240,200,0.5)');
+    ray.addColorStop(1, 'rgba(255,220,150,0)');
+    ctx.fillStyle = ray;
+    ctx.fillRect(-c, -1, size, 2);
+    ctx.restore();
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 // What the visor reflects: the view from orbit as a panorama. Deep space with the Milky
 // Way and the sun, a station module and solar array off to one side, and Earth filling
 // the lower half, with land, cloud and a glowing rim of atmosphere.
@@ -114,6 +158,9 @@ const smoothstep = (a: number, b: number, x: number) => {
 //
 // Across is all the way round, and the middle of the visor reflects what's three
 // quarters of the way across. Down runs from straight up to straight down.
+//
+// It comes in two versions. Dark mode's has the sun in it. Light mode's leaves it out,
+// since there the sun moves, and its glint on the visor is drawn live.
 function visorEnvironment() {
   const w = 1024;
   const h = 512;
@@ -127,13 +174,18 @@ function visorEnvironment() {
   // highlight on the visor are one and the same.
   const sun = { x: col(0.665), y: row(35) };
 
-  const paint = (draw: (ctx: CanvasRenderingContext2D) => void) => {
+  // Paints a layer and reads it back twice: without the sun, then with it added. Nothing
+  // else is drawn near the sun, so adding it last leaves the rest as it was.
+  type Draw = (ctx: CanvasRenderingContext2D) => void;
+  const paint = (draw: Draw, drawSun: Draw) => {
     const canvas = document.createElement('canvas');
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
     draw(ctx);
-    return ctx.getImageData(0, 0, w, h).data;
+    const without = ctx.getImageData(0, 0, w, h).data;
+    drawSun(ctx);
+    return [without, ctx.getImageData(0, 0, w, h).data] as const;
   };
   const traceLimb = (ctx: CanvasRenderingContext2D, lift: number) => {
     ctx.beginPath();
@@ -141,7 +193,8 @@ function visorEnvironment() {
   };
 
   // The sky in ordinary light, as sRGB colour. Earth is worked out per pixel below.
-  const base = paint(ctx => {
+  const [base, baseSun] = paint(
+    ctx => {
     const sky = ctx.createLinearGradient(0, 0, 0, row(-10));
     sky.addColorStop(0, '#010207');
     sky.addColorStop(0.75, '#070b22');
@@ -174,15 +227,6 @@ function visorEnvironment() {
     }
     for (let i = 0; i < 260; i++) star(Math.random() * w, Math.random() * row(-5), 0.5 + Math.random() * 1.1);
     ctx.globalAlpha = 1;
-
-    // The sun's glare, warm toward its edge.
-    const glare = ctx.createRadialGradient(sun.x, sun.y, 0, sun.x, sun.y, 24);
-    glare.addColorStop(0, '#ffffff');
-    glare.addColorStop(0.25, '#fff4d6');
-    glare.addColorStop(0.6, 'rgba(255,210,150,0.12)');
-    glare.addColorStop(1, 'rgba(255,210,150,0)');
-    ctx.fillStyle = glare;
-    ctx.fillRect(sun.x - 24, sun.y - 24, 48, 48);
 
     const line = (x0: number, y0: number, x1: number, y1: number) => {
       ctx.beginPath();
@@ -246,28 +290,44 @@ function visorEnvironment() {
       ctx.strokeStyle = `rgba(140,205,255,${0.5 - k * 0.08})`;
       ctx.stroke();
     }
-  });
+    },
+    // The sun's glare, warm toward its edge.
+    ctx => {
+      const glare = ctx.createRadialGradient(sun.x, sun.y, 0, sun.x, sun.y, 24);
+      glare.addColorStop(0, '#ffffff');
+      glare.addColorStop(0.25, '#fff4d6');
+      glare.addColorStop(0.6, 'rgba(255,210,150,0.12)');
+      glare.addColorStop(1, 'rgba(255,210,150,0)');
+      ctx.fillStyle = glare;
+      ctx.fillRect(sun.x - 24, sun.y - 24, 48, 48);
+    },
+  );
 
   // The bright layer, as linear intensity on black: the sun's disc and glow, and the
   // line of atmosphere along the limb.
   const GAIN = 30;
-  const light = paint(ctx => {
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, w, h);
-    const glow = (r: number, inner: string) => {
-      const g = ctx.createRadialGradient(sun.x, sun.y, 0, sun.x, sun.y, r);
-      g.addColorStop(0, inner);
-      g.addColorStop(1, 'rgba(255,230,190,0)');
-      ctx.fillStyle = g;
-      ctx.fillRect(sun.x - r, sun.y - r, r * 2, r * 2);
-    };
-    glow(30, 'rgba(255,230,190,0.02)');
-    glow(7, '#ffffff');
-    traceLimb(ctx, 1);
-    ctx.strokeStyle = 'rgba(120,200,255,0.05)';
-    ctx.lineWidth = 3;
-    ctx.stroke();
-  });
+  const SUN_R = 30;
+  const [light, lightSun] = paint(
+    ctx => {
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, w, h);
+      traceLimb(ctx, 1);
+      ctx.strokeStyle = 'rgba(120,200,255,0.05)';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    },
+    ctx => {
+      const glow = (r: number, inner: string) => {
+        const g = ctx.createRadialGradient(sun.x, sun.y, 0, sun.x, sun.y, r);
+        g.addColorStop(0, inner);
+        g.addColorStop(1, 'rgba(255,230,190,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(sun.x - r, sun.y - r, r * 2, r * 2);
+      };
+      glow(SUN_R, 'rgba(255,230,190,0.02)');
+      glow(7, '#ffffff');
+    },
+  );
 
   // Earth, in linear colour. Each pixel looks down at the ground, at a distance that
   // grows toward the horizon, so land and cloud foreshorten the way they do from orbit.
@@ -347,30 +407,41 @@ function visorEnvironment() {
     }
   };
 
-  const data = new Uint16Array(w * h * 4);
-  for (let y = 0; y < h; y++) {
-    const elev = 90 - ((y + 0.5) / h) * 180;
-    for (let x = 0, i = y * w * 4, o = (h - 1 - y) * w * 4; x < w; x++, i += 4, o += 4) {
-      const depth = limbs[x] - elev;
-      if (depth > 0) {
-        sampleEarth(x, y, rgb);
-        for (let c = 0; c < 3; c++) data[o + c] = THREE.DataUtils.toHalfFloat(rgb[c] + (light[i + c] / 255) * GAIN);
-      } else {
-        for (let c = 0; c < 3; c++) {
-          data[o + c] = light[i + c] ? THREE.DataUtils.toHalfFloat(decode[base[i + c]] + (light[i + c] / 255) * GAIN) : half[base[i + c]];
+  const fill = (data: Uint16Array, base: Uint8ClampedArray, light: Uint8ClampedArray, x0: number, y0: number, x1: number, y1: number) => {
+    for (let y = y0; y < y1; y++) {
+      const elev = 90 - ((y + 0.5) / h) * 180;
+      for (let x = x0, i = (y * w + x0) * 4, o = ((h - 1 - y) * w + x0) * 4; x < x1; x++, i += 4, o += 4) {
+        const depth = limbs[x] - elev;
+        if (depth > 0) {
+          sampleEarth(x, y, rgb);
+          for (let c = 0; c < 3; c++) data[o + c] = THREE.DataUtils.toHalfFloat(rgb[c] + (light[i + c] / 255) * GAIN);
+        } else {
+          for (let c = 0; c < 3; c++) {
+            data[o + c] = light[i + c] ? THREE.DataUtils.toHalfFloat(decode[base[i + c]] + (light[i + c] / 255) * GAIN) : half[base[i + c]];
+          }
         }
+        data[o + 3] = one;
       }
-      data[o + 3] = one;
     }
-  }
+  };
+  // The whole panorama without the sun, then a copy with just the square round the sun
+  // filled in again.
+  const without = new Uint16Array(w * h * 4);
+  fill(without, base, light, 0, 0, w, h);
+  const withSun = without.slice();
+  const r = SUN_R + 2;
+  fill(withSun, baseSun, lightSun, Math.floor(sun.x - r), Math.floor(sun.y - r), Math.ceil(sun.x + r), Math.ceil(sun.y + r));
 
-  const tex = new THREE.DataTexture(data, w, h, THREE.RGBAFormat, THREE.HalfFloatType);
-  tex.mapping = THREE.EquirectangularReflectionMapping;
-  tex.colorSpace = THREE.LinearSRGBColorSpace;
-  tex.magFilter = THREE.LinearFilter;
-  tex.minFilter = THREE.LinearFilter;
-  tex.needsUpdate = true;
-  return tex;
+  const texture = (data: Uint16Array) => {
+    const tex = new THREE.DataTexture(data, w, h, THREE.RGBAFormat, THREE.HalfFloatType);
+    tex.mapping = THREE.EquirectangularReflectionMapping;
+    tex.colorSpace = THREE.LinearSRGBColorSpace;
+    tex.magFilter = THREE.LinearFilter;
+    tex.minFilter = THREE.LinearFilter;
+    tex.needsUpdate = true;
+    return tex;
+  };
+  return { withSun: texture(withSun), withoutSun: texture(without) };
 }
 
 interface AstronautProps {
@@ -379,9 +450,11 @@ interface AstronautProps {
   onHover: (on: boolean) => void;
   // Cheaper materials and rounder-by-fewer-polygons spheres, for slower devices.
   lite: boolean;
+  // Light mode, where the page's sun lights the visor.
+  day: boolean;
 }
 
-export default function Astronaut({ brain, onBoop, onHover, lite }: AstronautProps) {
+export default function Astronaut({ brain, onBoop, onHover, lite, day }: AstronautProps) {
   // Segment count for curved geometry: full detail, or about half on the lite path.
   const seg = (n: number) => (lite ? Math.max(12, Math.round(n / 2)) : n);
   const rig = useRef<THREE.Group>(null!);
@@ -389,8 +462,15 @@ export default function Astronaut({ brain, onBoop, onHover, lite }: AstronautPro
   const head = useRef<THREE.Group>(null!);
   const antenna = useRef<THREE.Group>(null!);
   const beacon = useRef<THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>>(null!);
+  const visor = useRef<THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>>(null!);
+  const glint = useRef<THREE.Sprite>(null!);
   const cur = useRef({ x: 0, y: 0 });
   const anchor = useMemo(() => new THREE.Vector3(), []);
+  // Scratch space for finding the glint each frame.
+  const reflect = useMemo(
+    () => ({ toHead: new THREE.Matrix4(), eye: new THREE.Vector3(), sun: new THREE.Vector3(), normal: new THREE.Vector3(), view: new THREE.Vector3() }),
+    [],
+  );
   const grips = useMemo(() => gripGeometry(), []);
   // Built once and kept across a switch to the lite path. It takes a moment to paint,
   // and that switch happens when the device is already struggling.
@@ -411,7 +491,7 @@ export default function Astronaut({ brain, onBoop, onHover, lite }: AstronautPro
     // orbit tinted gold, and the coat adds a faint white reflection that strengthens
     // toward the rim. It has its own environment, so the lite path, which has no studio
     // light, gets the reflections too.
-    const gold = { color: GOLD, metalness: 1, roughness: 0.06, envMap: orbit };
+    const gold = { color: GOLD, metalness: 1, roughness: 0.06, envMap: orbit.withSun };
     return {
       shell: gloss(SHELL, 0.4, { clearcoat: 1, clearcoatRoughness: 0.25 }),
       trim: gloss(SAFFRON, 0.38, { clearcoat: 0.6, clearcoatRoughness: 0.3 }),
@@ -446,13 +526,28 @@ export default function Astronaut({ brain, onBoop, onHover, lite }: AstronautPro
     };
   }, [lite, orbit]);
 
+  const glintMat = useMemo(
+    () =>
+      new THREE.SpriteMaterial({
+        map: glintTexture(),
+        blending: THREE.AdditiveBlending,
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+      }),
+    [],
+  );
+
   useEffect(() => () => Object.values(mats).forEach(m => m.dispose()), [mats]);
   useEffect(
     () => () => {
-      orbit.dispose();
+      orbit.withSun.dispose();
+      orbit.withoutSun.dispose();
       grips.dispose();
+      glintMat.map?.dispose();
+      glintMat.dispose();
     },
-    [orbit, grips],
+    [orbit, grips, glintMat],
   );
 
   useFrame(({ camera, size, clock }, dt) => {
@@ -492,6 +587,47 @@ export default function Astronaut({ brain, onBoop, onHover, lite }: AstronautPro
     // A sharp flash that fades quickly. Reduced motion keeps it steadily lit.
     const flash = (clock.elapsedTime % BEACON_S) / BEACON_S;
     beacon.current.material.emissiveIntensity = b.reduced ? 0.8 : 0.3 + 2.2 * Math.exp(-flash * 14);
+
+    // Light mode: the visor reflects the view from orbit without the sun in it, and the
+    // page's sun glints off it live (see lib/sun.ts). Dark mode keeps the sun that's
+    // painted into the reflection.
+    const gold = visor.current.material;
+    const g = glint.current;
+    g.visible = false;
+    if (!day) {
+      gold.envMap = orbit.withSun;
+      gold.color.copy(GOLD_SHADE);
+      gold.envMapIntensity = 1;
+      return;
+    }
+    const sun = sunAt(now);
+    gold.envMap = orbit.withoutSun;
+    gold.color.lerpColors(GOLD_SHADE, GOLD_SUNLIT, sun.light);
+    // Once the sun's down the view from orbit is darker too.
+    gold.envMapIntensity = 0.7 + 0.45 * sun.light;
+    if (sun.light <= 0) return;
+
+    // The glint is where the visor's normal is halfway between the sun and the camera.
+    // It's worked out in the head's own frame, on a sphere the visor's size, and refined
+    // once since the camera isn't infinitely far away.
+    const { toHead, eye, normal, view } = reflect;
+    head.current.updateWorldMatrix(true, false);
+    toHead.copy(head.current.matrixWorld).invert();
+    eye.copy(camera.position).applyMatrix4(toHead);
+    const ray = towardSun(sun, reflect.sun).transformDirection(toHead);
+    normal.copy(eye).normalize().add(ray).normalize();
+    view.copy(eye).addScaledVector(normal, -SUN.r).normalize();
+    normal.copy(view).add(ray).normalize();
+    // The visor faces +z. The glint fades out toward its rim, and isn't there past it.
+    const onVisor = smoothstep(Math.cos(SUN.cap), Math.cos(SUN.cap - 0.16), normal.z);
+    if (onVisor <= 0) return;
+    g.visible = true;
+    g.position
+      .set(normal.x * SUN.r * HELMET[0], normal.y * SUN.r * HELMET[1], normal.z * SUN.r * HELMET[2])
+      .addScaledVector(view, 0.05);
+    g.scale.setScalar(0.4 + 0.2 * sun.light);
+    g.material.opacity = sun.light * onVisor;
+    g.material.color.lerpColors(GLINT_HIGH, GLINT_LOW, sun.warmth).multiplyScalar(1.6);
   });
 
   return (
@@ -622,7 +758,7 @@ export default function Astronaut({ brain, onBoop, onHover, lite }: AstronautPro
         {/* the gold sun visor, its rim, pull tabs, and an arm back to a pivot on each side.
             The arms are strips of the shell that narrow to the pivot. */}
         <group scale={HELMET}>
-          <mesh rotation={[Math.PI / 2, 0, 0]} material={mats.gold}>
+          <mesh ref={visor} rotation={[Math.PI / 2, 0, 0]} material={mats.gold}>
             <sphereGeometry args={[SUN.r, seg(96), seg(48), 0, Math.PI * 2, 0, SUN.cap]} />
           </mesh>
           <mesh position={[0, 0, SUN.r * Math.cos(SUN.cap)]} material={mats.ring}>
@@ -653,6 +789,9 @@ export default function Astronaut({ brain, onBoop, onHover, lite }: AstronautPro
             </group>
           ))}
         </group>
+
+        {/* light mode: the sun's glint on the visor, placed each frame */}
+        <sprite ref={glint} material={glintMat} renderOrder={1} />
       </group>
     </group>
   );

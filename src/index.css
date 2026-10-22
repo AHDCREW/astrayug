@@ -63,6 +63,116 @@ body {
   color: #fff;
 }
 
+/* Light mode's sky, behind the page (components/Sun.tsx sets the variables). Dark mode
+   has no sun. */
+.sky {
+  --sun-x: -100vmax;
+  --sun-y: -100vmax;
+  --horizon: 100vh;
+  --warmth: 0;
+  --glow: 0;
+  --dusk: 0;
+  --sun-size: clamp(44px, 8vmin, 92px);
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+:root.dark .sky {
+  display: none;
+}
+.sky > *,
+.sun > * {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+/* Golden hour warms the page up from the horizon. Twilight cools and dims it from above,
+   lightly, since this is still light mode. */
+.sky-golden {
+  inset: 0;
+  background: linear-gradient(to top, rgb(255 160 96 / 0.3), rgb(255 190 140 / 0.12) 45%, rgb(255 210 170 / 0) 80%);
+  opacity: calc(var(--warmth) * (1 - var(--dusk)));
+  will-change: opacity;
+}
+.sky-dusk {
+  inset: 0;
+  background: linear-gradient(to bottom, rgb(104 120 190 / 0.2), rgb(150 140 200 / 0.1) 55%, rgb(255 168 140 / 0.12));
+  opacity: var(--dusk);
+  will-change: opacity;
+}
+
+/* The glow along the horizon on the sun's side, which lingers after sunset and comes
+   before sunrise. */
+.sky-glow {
+  width: 170vmin;
+  height: 110vmin;
+  translate: calc(var(--sun-x) - 50%) calc(var(--horizon) - 50%);
+  background: radial-gradient(
+    closest-side,
+    rgb(255 120 60 / 0.5),
+    rgb(255 150 96 / 0.28) 35%,
+    rgb(255 186 150 / 0.1) 65%,
+    rgb(255 200 170 / 0)
+  );
+  opacity: var(--glow);
+  will-change: translate, opacity;
+}
+
+/* High up, the sun is a white-hot disc in a wide pale-gold halo. Low down, the air
+   between scatters the blue out, and it's a deep orange disc in a red halo, squashed
+   a little flat by the air bending its light. The two cross-fade as it climbs. */
+.sun {
+  translate: var(--sun-x) var(--sun-y);
+  will-change: translate;
+}
+.sun > * {
+  translate: -50% -50%;
+  border-radius: 50%;
+  will-change: opacity;
+}
+.sun-halo {
+  width: 90vmin;
+  height: 90vmin;
+  background: radial-gradient(
+    closest-side,
+    rgb(255 236 176 / 0.95),
+    rgb(255 228 156 / 0.42) 14%,
+    rgb(255 222 150 / 0.12) 40%,
+    rgb(255 222 150 / 0)
+  );
+  opacity: calc(1 - var(--warmth));
+}
+.sun-halo.low {
+  width: 75vmin;
+  height: 75vmin;
+  background: radial-gradient(
+    closest-side,
+    rgb(255 122 56 / 0.6),
+    rgb(255 140 80 / 0.24) 30%,
+    rgb(255 160 110 / 0.06) 62%,
+    rgb(255 160 110 / 0)
+  );
+  opacity: var(--warmth);
+}
+.sun-disc {
+  width: var(--sun-size);
+  height: var(--sun-size);
+  background: radial-gradient(closest-side, #fff 50%, rgb(255 246 214) 64%, rgb(255 228 160 / 0.6) 80%, rgb(255 222 150 / 0));
+  opacity: calc(1 - var(--warmth));
+  scale: 1 calc(1 - 0.12 * var(--warmth) * var(--warmth));
+}
+.sun-disc.low {
+  background: radial-gradient(closest-side, #ffa463, #ff8640 45%, #ff6326 72%, rgb(255 91 31 / 0));
+  opacity: var(--warmth);
+}
+
+/* What the sun casts a shadow from. */
+.sunlit {
+  text-shadow: var(--sun-shadow, none);
+}
+
 /* Theme switch: a circle of the new theme grows out from the toggle. */
 ::view-transition-old(root),
 ::view-transition-new(root) {
